@@ -19,11 +19,13 @@ Pure core library for AI orchestration. Transport-agnostic, host-agnostic, async
 
 ## Install
 
+Requires Python 3.11+ and [uv](https://docs.astral.sh/uv/).
+
 ```bash
-pip install -e ".[dev]"
+uv sync
 ```
 
-Requires Python 3.11+. Dependencies: `pydantic>=2`, `httpx`, `aiosqlite`.
+This creates a `.venv` and installs all dependencies in isolation. Dependencies: `pydantic>=2`, `httpx`, `aiosqlite`.
 
 ## Quick start
 
@@ -110,16 +112,16 @@ PriestConfig(provider="ollama", model="qwen3.5:9b", provider_options={"think": F
 
 ```bash
 # Unit tests (no Ollama required)
-python -m pytest tests/ -v
+uv run pytest tests/ -v
 
 # Single prompt against Ollama
-python scripts/try_run.py --model qwen3.5:9b --prompt "hello"
+uv run python scripts/try_run.py --model qwen3.5:9b --prompt "hello"
 
 # Interactive chat
-python scripts/try_run.py --model qwen3.5:9b --chat
+uv run python scripts/try_run.py --model qwen3.5:9b --chat
 
 # Full smoke test
-python scripts/try_run.py --model qwen3.5:9b
+uv run python scripts/try_run.py --model qwen3.5:9b
 ```
 
 ## Package structure
