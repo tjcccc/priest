@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Protocol, runtime_checkable
 
 from priest.errors import ProfileNotFoundError
+from priest.profile.default_profile import get_default_profile
 from priest.profile.model import Profile
 
 
@@ -16,19 +17,29 @@ class ProfileLoader(Protocol):
 class FilesystemProfileLoader:
     """Loads profiles from a directory on disk.
 
-    The host application provides the profiles_root path. Core never
-    hardcodes a default path.
+    profiles_root is optional. When provided, named profiles are loaded from
+    that directory first. If a profile is not found there (or no root is given),
+    the built-in default profile is returned for name='default'. Any other
+    missing profile raises ProfileNotFoundError.
     """
 
-    def __init__(self, profiles_root: Path) -> None:
+    def __init__(self, profiles_root: Path | None = None) -> None:
         self._root = profiles_root
 
     def load(self, name: str) -> Profile:
-        profile_dir = self._root / name
+        if self._root is not None:
+            profile_dir = self._root / name
+            profile_md = profile_dir / "PROFILE.md"
+            if profile_md.exists():
+                return self._load_from_dir(name, profile_dir)
 
+        if name == "default":
+            return get_default_profile()
+
+        raise ProfileNotFoundError(name)
+
+    def _load_from_dir(self, name: str, profile_dir: Path) -> Profile:
         profile_md = profile_dir / "PROFILE.md"
-        if not profile_md.exists():
-            raise ProfileNotFoundError(name)
 
         identity = profile_md.read_text(encoding="utf-8")
 
