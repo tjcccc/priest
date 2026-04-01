@@ -1,8 +1,27 @@
 # DEVLOG
 
-## 2026-03-31 — Milestone 1 complete
+## 2026-04-01 — Core semantics cleanup
 
-### What was built
+Post-review fixes addressing session ID coherence, output format design, and cost_limit noise.
+
+**Session ID semantics fixed:**
+- `SessionStore.create()` now accepts an optional `session_id` parameter
+- When `create_if_missing=True`, the caller's provided ID is honored — the session is created with exactly that ID
+- This makes session initialization idempotent: same ID, same session
+
+**Output format redesigned:**
+- `OutputSpec.mode` + `strict_json` replaced with two independent fields:
+  - `provider_format`: activates provider-native structured output (e.g. Ollama's `format` field). Currently `"json"` only.
+  - `prompt_format`: injects a natural-language instruction into the system prompt. Supports `"json"`, `"xml"`, `"code"`.
+- Both are `None` by default (no-op)
+- Core **never parses** the response. `response.text` is always the raw string — parsing is the app layer's responsibility
+- `PriestResponse.json_payload` removed — it was core doing app-layer work
+
+**Cost limit:** removed noisy debug log that fired on every run. Advisory comment on the field is sufficient.
+
+---
+
+## 2026-03-31 — Milestone 1 complete
 
 Initial implementation of the `priest` core library. All Milestone 1 deliverables are in place and passing.
 
@@ -10,14 +29,14 @@ Initial implementation of the `priest` core library. All Milestone 1 deliverable
 
 **Key decisions made:**
 
-- Schema: Option B (nested sub-objects) — `PriestConfig`, `PriestRequest`, `PriestResponse` with `ok` property. `provider` and `model` stay as separate fields inside `PriestConfig`.
+- Schema: nested sub-objects — `PriestConfig`, `PriestRequest`, `PriestResponse` with `ok` property. `provider` and `model` stay as separate fields inside `PriestConfig`.
 - Session storage: Abstract `SessionStore` ABC + `SqliteSessionStore` default + `InMemorySessionStore` for tests. `aiosqlite` for async SQLite. No default path hardcoded in core.
-- Profile loading: `FilesystemProfileLoader` is sync (startup-adjacent, not a hot path). Engine is handed a resolved `Profile` dataclass — it never touches the filesystem after that.
-- Context order: rules → identity → custom → memories → session history → user prompt.
+- Profile loading: `FilesystemProfileLoader` is sync (startup-adjacent, not a hot path). Engine is handed a resolved `Profile` dataclass — it never touches the filesystem after that. Built-in fallback default profile in `default_profile.py`.
+- Context order: system_context → rules → identity → custom → memories → session history → user prompt.
 - Provider adapters: `OllamaProvider` via `httpx` async. `provider_options: dict` on `PriestConfig` forwards arbitrary fields into the provider payload (e.g. `{"think": False}` for Qwen3 no-thinking mode).
 - `scripts/try_run.py` supports `--prompt`, `--chat`, and bare smoke-test modes.
 
-**Tests:** 11 unit tests, all passing. No Ollama required for unit tests.
+**Tests:** 29 unit tests + 4 integration tests (Ollama), all passing.
 
 **Verified against:** Ollama + `qwen3.5:9b` locally. With `think: False`, latency ~1s for short prompts.
 

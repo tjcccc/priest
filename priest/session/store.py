@@ -9,8 +9,16 @@ class SessionStore(ABC):
     """Abstract base for session persistence backends."""
 
     @abstractmethod
-    async def create(self, profile_name: str, metadata: dict | None = None) -> Session:
-        """Create and persist a new session, returning it."""
+    async def create(
+        self,
+        profile_name: str,
+        session_id: str | None = None,
+        metadata: dict | None = None,
+    ) -> Session:
+        """Create and persist a new session, returning it.
+
+        If session_id is provided it is used as-is. Otherwise a UUID is generated.
+        """
         ...
 
     @abstractmethod

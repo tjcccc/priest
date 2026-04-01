@@ -11,7 +11,6 @@ class PriestConfig(BaseModel):
     timeout_seconds: float | None = None
     max_output_tokens: int | None = None
     # Advisory only — enforcement is the host app's responsibility.
-    # Core will surface a warning in PriestResponse if cost_limit is exceeded.
     cost_limit: float | None = None
     # Provider-specific options merged directly into the request payload.
     # Examples: {"think": False} for Ollama/Qwen3, {"temperature": 0.7} etc.
@@ -22,14 +21,21 @@ class SessionRef(BaseModel):
     id: str
     continue_existing: bool = True
     # If continue_existing=True but no session with this ID exists,
-    # create a new session rather than raising SESSION_NOT_FOUND.
+    # create it using the provided ID rather than raising SESSION_NOT_FOUND.
     create_if_missing: bool = True
 
 
 class OutputSpec(BaseModel):
-    mode: Literal["text", "json"] = "text"
-    # When mode="json", instruct the provider to return only valid JSON.
-    strict_json: bool = False
+    # Activates provider-native structured output when supported
+    # (e.g. Ollama's format field, OpenAI's response_format).
+    # Currently only "json" has broad provider-native support.
+    provider_format: Literal["json"] | None = None
+
+    # Injects a natural-language format instruction into the system prompt.
+    # Works with any provider regardless of native support.
+    # The raw text is always returned as-is in PriestResponse.text —
+    # parsing is the app layer's responsibility.
+    prompt_format: Literal["json", "xml", "code"] | None = None
 
 
 class PriestRequest(BaseModel):

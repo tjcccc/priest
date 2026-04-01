@@ -12,9 +12,14 @@ class InMemorySessionStore(SessionStore):
     def __init__(self) -> None:
         self._sessions: dict[str, Session] = {}
 
-    async def create(self, profile_name: str, metadata: dict | None = None) -> Session:
+    async def create(
+        self,
+        profile_name: str,
+        session_id: str | None = None,
+        metadata: dict | None = None,
+    ) -> Session:
         session = Session(
-            id=str(uuid.uuid4()),
+            id=session_id or str(uuid.uuid4()),
             profile_name=profile_name,
             metadata=metadata or {},
         )

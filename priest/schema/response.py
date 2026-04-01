@@ -33,8 +33,9 @@ class PriestError(BaseModel):
 
 
 class PriestResponse(BaseModel):
+    # Raw text returned by the provider. Always populated on success.
+    # Parsing (JSON, XML, etc.) is the app layer's responsibility.
     text: str | None = None
-    json_payload: Any | None = None
     execution: ExecutionInfo
     usage: UsageInfo | None = None
     session: SessionInfo | None = None

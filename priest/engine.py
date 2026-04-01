@@ -2,10 +2,8 @@ from __future__ import annotations
 
 import logging
 import time
-from typing import Any
 
 from priest.errors import (
-    ErrorCode,
     PriestError,
     ProviderNotRegisteredError,
     SessionNotFoundError,
@@ -66,9 +64,11 @@ class PriestEngine:
                 session = await self._session_store.get(session_ref.id)
                 if session is None:
                     if session_ref.create_if_missing:
+                        # Honor the caller's ID — session is created with it,
+                        # making create_if_missing idempotent on the same ID.
                         session = await self._session_store.create(
                             profile_name=request.profile,
-                            metadata={"source": "create_if_missing"},
+                            session_id=session_ref.id,
                         )
                         is_new_session = True
                     else:
@@ -92,7 +92,6 @@ class PriestEngine:
         # --- Call provider ---
         error_model: PriestErrorModel | None = None
         text: str | None = None
-        json_payload: Any = None
         finish_reason: str | None = None
         input_tokens: int | None = None
         output_tokens: int | None = None
@@ -107,17 +106,6 @@ class PriestEngine:
             finish_reason = result.finish_reason
             input_tokens = result.input_tokens
             output_tokens = result.output_tokens
-
-            if request.output.mode == "json" and text is not None:
-                import json as _json
-                try:
-                    json_payload = _json.loads(text)
-                except _json.JSONDecodeError as exc:
-                    error_model = PriestErrorModel(
-                        code=ErrorCode.PROVIDER_ERROR,
-                        message=f"Provider returned invalid JSON: {exc}",
-                        details={"raw_text": text},
-                    )
 
         except PriestError as exc:
             finish_reason = "error"
@@ -140,13 +128,6 @@ class PriestEngine:
                 turn_count=len(session.turns),
             )
 
-        # --- Warn if cost_limit is set (advisory only) ---
-        if request.config.cost_limit is not None:
-            logger.debug(
-                "cost_limit=%s is advisory only — enforcement is the host app's responsibility",
-                request.config.cost_limit,
-            )
-
         latency_ms = int(time.monotonic() * 1000) - start_ms
 
         usage: UsageInfo | None = None
@@ -160,7 +141,6 @@ class PriestEngine:
 
         return PriestResponse(
             text=text,
-            json_payload=json_payload,
             execution=ExecutionInfo(
                 provider=request.config.provider,
                 model=request.config.model,

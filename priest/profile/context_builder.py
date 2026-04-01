@@ -4,6 +4,12 @@ from priest.profile.model import Profile
 from priest.schema.request import OutputSpec
 from priest.session.model import Session
 
+_FORMAT_INSTRUCTIONS: dict[str, str] = {
+    "json": "Respond only with valid JSON. No prose, no markdown code fences.",
+    "xml": "Respond only with valid XML. No prose, no markdown code fences.",
+    "code": "Respond only with code. No prose, no markdown code fences around it.",
+}
+
 
 def build_messages(
     profile: Profile,
@@ -25,8 +31,9 @@ def build_messages(
     3. profile.identity — PROFILE.md
     4. profile.custom  — CUSTOM.md
     5. profile.memories
-    6. session history turns
-    7. current prompt (+ extra_context appended to user turn)
+    6. output format instruction (if format != "text")
+    7. session history turns
+    8. current prompt (+ extra_context appended to user turn)
     """
     system_parts: list[str] = []
 
@@ -47,10 +54,10 @@ def build_messages(
         if memory:
             system_parts.append(memory)
 
-    if output_spec.mode == "json" and output_spec.strict_json:
-        system_parts.append(
-            "Respond only with valid JSON. No prose, no markdown code fences."
-        )
+    if output_spec.prompt_format:
+        instruction = _FORMAT_INSTRUCTIONS.get(output_spec.prompt_format)
+        if instruction:
+            system_parts.append(instruction)
 
     messages: list[dict] = []
 

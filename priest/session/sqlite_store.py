@@ -87,10 +87,15 @@ class SqliteSessionStore(SessionStore):
             raise RuntimeError("SqliteSessionStore not initialized — call await store.init() first")
         return self._db
 
-    async def create(self, profile_name: str, metadata: dict | None = None) -> Session:
+    async def create(
+        self,
+        profile_name: str,
+        session_id: str | None = None,
+        metadata: dict | None = None,
+    ) -> Session:
         now = _utcnow()
         session = Session(
-            id=str(uuid.uuid4()),
+            id=session_id or str(uuid.uuid4()),
             profile_name=profile_name,
             created_at=now,
             updated_at=now,

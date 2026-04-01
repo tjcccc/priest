@@ -16,6 +16,7 @@ Pure core library for AI orchestration. Transport-agnostic, host-agnostic, async
 - No CLI, no HTTP server, no config files required
 - No multi-step orchestration or workflow chaining (that belongs in `priests`)
 - No hardcoded paths or model preferences
+- No response parsing — `response.text` is always the raw string from the model
 
 ## Install
 
@@ -46,7 +47,7 @@ async def main():
         profile="default",
         prompt="Hello.",
     ))
-    print(response.text)
+    print(response.text)  # always a raw string — parse it yourself if needed
 
 asyncio.run(main())
 ```
@@ -65,9 +66,11 @@ profiles/
     profile.toml  # optional machine-readable metadata
 ```
 
+A built-in `default` profile is included. Host apps can override it by providing their own `default/` folder.
+
 ## Sessions
 
-Sessions persist conversation turns to SQLite. Pass a `SessionRef` in the request to continue an existing conversation.
+Sessions persist conversation turns to SQLite. Pass a `SessionRef` with your chosen ID to start or continue a conversation. The ID you provide is canonical — the session is created with it if it does not exist yet.
 
 ```python
 from priest import SessionRef
@@ -76,19 +79,51 @@ from priest.session.sqlite_store import SqliteSessionStore
 async with SqliteSessionStore(db_path=Path("sessions.db")) as store:
     engine = PriestEngine(..., session_store=store)
 
-    # First turn — session is created automatically
+    # First turn — session created with ID "my-session"
     r1 = await engine.run(PriestRequest(
         ...,
         prompt="Remember this number: 7.",
         session=SessionRef(id="my-session", create_if_missing=True),
     ))
 
-    # Second turn — session is continued
+    # Second turn — session continued by the same ID
     r2 = await engine.run(PriestRequest(
         ...,
         prompt="What number did I ask you to remember?",
         session=SessionRef(id="my-session"),
     ))
+```
+
+## Output format hints
+
+`priest` never parses the response. `response.text` is always the raw string returned by the model — format handling is the app layer's responsibility.
+
+Two independent mechanisms are available to hint the model's output format:
+
+```python
+from priest.schema.request import OutputSpec
+
+# Activate provider-native JSON mode (e.g. Ollama's format field)
+output=OutputSpec(provider_format="json")
+
+# Inject a natural-language instruction into the system prompt
+output=OutputSpec(prompt_format="json")   # also: "xml", "code"
+
+# Both together for maximum compliance
+output=OutputSpec(provider_format="json", prompt_format="json")
+```
+
+Either, both, or neither can be set independently.
+
+## System context
+
+App-layer policy can be injected at the top of the system prompt — above profile rules — via `system_context`:
+
+```python
+PriestRequest(
+    ...,
+    system_context=["Today is 2026-04-01.", "Running inside priests CLI."],
+)
 ```
 
 ## Providers
@@ -112,6 +147,9 @@ PriestConfig(provider="ollama", model="qwen3.5:9b", provider_options={"think": F
 
 ```bash
 # Unit tests (no Ollama required)
+uv run pytest tests/ -m "not integration" -v
+
+# Integration tests (requires running Ollama)
 uv run pytest tests/ -v
 
 # Single prompt against Ollama
@@ -134,13 +172,14 @@ priest/
 │   ├── request.py         # PriestRequest, PriestConfig, SessionRef, OutputSpec
 │   └── response.py        # PriestResponse, ExecutionInfo, UsageInfo, PriestError
 ├── profile/
-│   ├── loader.py          # FilesystemProfileLoader
+│   ├── default_profile.py # built-in fallback default profile
+│   ├── loader.py          # FilesystemProfileLoader, ProfileLoader protocol
 │   ├── model.py           # Profile dataclass
 │   └── context_builder.py # message assembly
 ├── session/
 │   ├── store.py           # SessionStore ABC
 │   ├── sqlite_store.py    # SqliteSessionStore (default)
-│   ├── memory_store.py    # InMemorySessionStore (tests)
+│   ├── memory_store.py    # InMemorySessionStore (tests/ephemeral)
 │   └── model.py           # Session, Turn dataclasses
 └── providers/
     ├── base.py            # ProviderAdapter ABC, AdapterResult

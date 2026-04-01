@@ -66,21 +66,20 @@ async def test_metadata_echoed():
 
 
 @pytest.mark.asyncio
-async def test_session_created_on_first_run():
+async def test_session_created_with_caller_id():
+    """Session is created using the caller-provided ID, not a generated UUID."""
     store = InMemorySessionStore()
     engine = _make_engine(session_store=store)
 
-    # First run creates a new session
-    session_id = "test-session-1"
-    request = _make_request(session=SessionRef(id=session_id, create_if_missing=True))
+    request = _make_request(session=SessionRef(id="my-session", create_if_missing=True))
     response = await engine.run(request)
 
     assert response.session is not None
+    assert response.session.id == "my-session"
     assert response.session.is_new is True
-    assert response.session.turn_count == 2  # user + assistant
+    assert response.session.turn_count == 2
 
-    # Session is persisted
-    saved = await store.get(response.session.id)
+    saved = await store.get("my-session")
     assert saved is not None
     assert len(saved.turns) == 2
     assert saved.turns[0].role == "user"
@@ -92,15 +91,13 @@ async def test_session_continued_across_runs():
     store = InMemorySessionStore()
     engine = _make_engine(session_store=store)
 
-    # Create session on first run
     r1 = await engine.run(_make_request(
         session=SessionRef(id="s1", create_if_missing=True)
     ))
-    session_id = r1.session.id
+    assert r1.session.id == "s1"
 
-    # Second run continues it
     r2 = await engine.run(_make_request(
-        session=SessionRef(id=session_id, continue_existing=True)
+        session=SessionRef(id="s1", continue_existing=True)
     ))
     assert r2.session is not None
     assert r2.session.is_new is False
@@ -108,24 +105,58 @@ async def test_session_continued_across_runs():
 
 
 @pytest.mark.asyncio
-async def test_json_mode_parses_payload():
+async def test_json_format_returns_raw_text():
+    """JSON format mode returns raw text — parsing is app layer's job."""
     engine = _make_engine(adapter_text='{"answer": 42}')
-    request = _make_request(output=OutputSpec(mode="json", strict_json=True))
+    request = _make_request(output=OutputSpec(provider_format="json"))
     response = await engine.run(request)
 
     assert response.ok
-    assert response.json_payload == {"answer": 42}
+    assert response.text == '{"answer": 42}'
 
 
 @pytest.mark.asyncio
-async def test_json_mode_invalid_json_sets_error():
-    engine = _make_engine(adapter_text="not json at all")
-    request = _make_request(output=OutputSpec(mode="json", strict_json=True))
-    response = await engine.run(request)
+async def test_prompt_format_injects_instruction():
+    """prompt_format injects a format instruction into the system prompt."""
+    captured: list[dict] | None = None
+    original_complete = MockAdapter.complete
 
-    assert not response.ok
-    assert response.error is not None
-    assert "invalid json" in response.error.message.lower()
+    async def capturing_complete(self, messages, config, output_spec):
+        nonlocal captured
+        captured = messages
+        return await original_complete(self, messages, config, output_spec)
+
+    engine = _make_engine()
+    request = _make_request(output=OutputSpec(prompt_format="json"))
+
+    with patch.object(MockAdapter, "complete", capturing_complete):
+        await engine.run(request)
+
+    assert captured is not None
+    system_msg = next(m for m in captured if m["role"] == "system")
+    assert "valid JSON" in system_msg["content"]
+
+
+@pytest.mark.asyncio
+async def test_provider_format_and_prompt_format_are_independent():
+    """provider_format and prompt_format can be set independently."""
+    engine = _make_engine(adapter_text="result")
+
+    # prompt_format only — no provider hint
+    r1 = await engine.run(_make_request(output=OutputSpec(prompt_format="json")))
+    assert r1.ok
+
+    # provider_format only — no prompt instruction
+    r2 = await engine.run(_make_request(output=OutputSpec(provider_format="json")))
+    assert r2.ok
+
+    # both
+    r3 = await engine.run(_make_request(output=OutputSpec(provider_format="json", prompt_format="json")))
+    assert r3.ok
+
+    # neither (default)
+    r4 = await engine.run(_make_request(output=OutputSpec()))
+    assert r4.ok
 
 
 @pytest.mark.asyncio
@@ -171,5 +202,4 @@ async def test_system_context_appears_first_in_system_message():
     system_msg = next(m for m in captured if m["role"] == "system")
     content = system_msg["content"]
     assert "Today is 2026-04-01." in content
-    # system_context must appear before profile rules
     assert content.index("Today is 2026-04-01.") < content.index("Do not make things up")

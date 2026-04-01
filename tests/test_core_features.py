@@ -148,15 +148,15 @@ class TestSession:
             prompt="First message.",
             session=SessionRef(id="s1", create_if_missing=True),
         ))
-        session_id = r1.session.id
+        assert r1.session.id == "s1"  # caller's ID is honored
 
         r2 = await engine.run(PriestRequest(
             config=PriestConfig(provider="mock", model="test"),
             prompt="Second message.",
-            session=SessionRef(id=session_id),
+            session=SessionRef(id="s1"),
         ))
 
-        saved = await store.get(session_id)
+        saved = await store.get("s1")
         assert saved is not None
         assert len(saved.turns) == 4  # user + assistant × 2
         assert r2.session.turn_count == 4
@@ -185,15 +185,14 @@ class TestMemories:
             meta={},
         )
 
+        from priest.schema.request import OutputSpec
         messages = build_messages(
             profile=profile,
             session=None,
             prompt="Hello.",
             system_context=[],
             extra_context=[],
-            output_spec=__import__(
-                "priest.schema.request", fromlist=["OutputSpec"]
-            ).OutputSpec(),
+            output_spec=OutputSpec(),
         )
 
         system_msg = next(m for m in messages if m["role"] == "system")
