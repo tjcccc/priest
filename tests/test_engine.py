@@ -146,7 +146,7 @@ async def test_json_mode_invalid_json_sets_error():
 
 
 @pytest.mark.asyncio
-async def test_extra_context_included_in_messages():
+async def test_extra_context_included_in_user_message():
     """Verify extra_context strings appear in the user message."""
     captured: list[dict] | None = None
     original_complete = MockAdapter.complete
@@ -165,3 +165,28 @@ async def test_extra_context_included_in_messages():
     assert captured is not None
     user_msg = next(m for m in captured if m["role"] == "user")
     assert "some extra info" in user_msg["content"]
+
+
+@pytest.mark.asyncio
+async def test_system_context_appears_first_in_system_message():
+    """Verify system_context is injected at the top of the system prompt."""
+    captured: list[dict] | None = None
+    original_complete = MockAdapter.complete
+
+    async def capturing_complete(self, messages, config, output_spec):
+        nonlocal captured
+        captured = messages
+        return await original_complete(self, messages, config, output_spec)
+
+    engine = _make_engine()
+    request = _make_request(system_context=["Today is 2026-04-01.", "App: priests"])
+
+    with patch.object(MockAdapter, "complete", capturing_complete):
+        await engine.run(request)
+
+    assert captured is not None
+    system_msg = next(m for m in captured if m["role"] == "system")
+    content = system_msg["content"]
+    assert "Today is 2026-04-01." in content
+    # system_context must appear before profile rules
+    assert content.index("Today is 2026-04-01.") < content.index("Do not make things up")

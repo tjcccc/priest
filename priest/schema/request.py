@@ -37,6 +37,9 @@ class PriestRequest(BaseModel):
     profile: str = "default"
     prompt: str
     session: SessionRef | None = None
+    # Injected at the top of the system prompt — highest priority context.
+    # Use for app-layer policy: current date, runtime environment, guardrails, etc.
+    system_context: list[str] = Field(default_factory=list)
     # Strings appended to the user turn as additional context.
     extra_context: list[str] = Field(default_factory=list)
     # Arbitrary caller metadata — passed through to PriestResponse unchanged.

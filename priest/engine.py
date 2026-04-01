@@ -84,6 +84,7 @@ class PriestEngine:
             profile=profile,
             session=session,
             prompt=request.prompt,
+            system_context=request.system_context,
             extra_context=request.extra_context,
             output_spec=request.output,
         )

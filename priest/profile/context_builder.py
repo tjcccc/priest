@@ -9,6 +9,7 @@ def build_messages(
     profile: Profile,
     session: Session | None,
     prompt: str,
+    system_context: list[str],
     extra_context: list[str],
     output_spec: OutputSpec,
 ) -> list[dict]:
@@ -19,15 +20,19 @@ def build_messages(
     translating this format if its API differs.
 
     Context priority (system prompt sections, highest to lowest):
-    1. profile.rules (RULES.md)
-    2. profile.identity (PROFILE.md)
-    3. profile.custom (CUSTOM.md)
-    4. profile.memories
-    5. extra_context strings (appended to user turn)
+    1. system_context  — app-layer policy (date, environment, guardrails)
+    2. profile.rules   — RULES.md
+    3. profile.identity — PROFILE.md
+    4. profile.custom  — CUSTOM.md
+    5. profile.memories
     6. session history turns
-    7. current prompt
+    7. current prompt (+ extra_context appended to user turn)
     """
     system_parts: list[str] = []
+
+    for ctx in system_context:
+        if ctx:
+            system_parts.append(ctx)
 
     if profile.rules:
         system_parts.append(profile.rules)
