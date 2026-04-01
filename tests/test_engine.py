@@ -6,28 +6,11 @@ import pytest
 from priest.engine import PriestEngine
 from priest.errors import ProviderNotRegisteredError
 from priest.profile.loader import FilesystemProfileLoader
-from priest.providers.base import AdapterResult, ProviderAdapter
 from priest.schema.request import OutputSpec, PriestConfig, PriestRequest, SessionRef
 from priest.session.memory_store import InMemorySessionStore
+from tests.mock_adapter import MockAdapter
 
 FIXTURES = Path(__file__).parent / "fixtures" / "profiles"
-
-
-class MockAdapter(ProviderAdapter):
-    provider_name = "mock"
-
-    def __init__(self, text: str = "hello", finish_reason: str = "stop") -> None:
-        self._text = text
-        self._finish_reason = finish_reason
-
-    async def complete(self, messages, config, output_spec) -> AdapterResult:
-        return AdapterResult(
-            text=self._text,
-            raw={"mock": True},
-            finish_reason=self._finish_reason,
-            input_tokens=10,
-            output_tokens=5,
-        )
 
 
 def _make_engine(session_store=None, adapter_text="hello"):
