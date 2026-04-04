@@ -2,6 +2,15 @@
 
 All notable changes to `priest` are documented here.
 
+## [0.2.1] — 2026-04-04
+
+### Fixed
+- Profile memories not recalled by the model — memory file contents were injected as
+  unlabeled raw text blocks in the system prompt; now grouped under a
+  `## Loaded Memories` heading so models correctly identify and use saved facts
+
+---
+
 ## [0.2.0] — 2026-04-04
 
 ### Added
