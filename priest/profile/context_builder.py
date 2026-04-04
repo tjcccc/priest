@@ -50,9 +50,10 @@ def build_messages(
     if profile.custom:
         system_parts.append(profile.custom)
 
-    for memory in profile.memories:
-        if memory:
-            system_parts.append(memory)
+    non_empty_memories = [m for m in profile.memories if m and m.strip()]
+    if non_empty_memories:
+        memory_block = "\n".join(m.strip() for m in non_empty_memories)
+        system_parts.append(f"## Loaded Memories\n\n{memory_block}")
 
     if output_spec.prompt_format:
         instruction = _FORMAT_INSTRUCTIONS.get(output_spec.prompt_format)
