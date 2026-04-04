@@ -291,10 +291,11 @@ wheels = [
 
 [[package]]
 name = "priest"
-version = "0.1.0"
+version = "0.2.0"
 source = { editable = "." }
 dependencies = [
     { name = "aiosqlite" },
+    { name = "anyio", extra = ["trio"] },
     { name = "httpx" },
     { name = "openai" },
     { name = "pydantic" },
@@ -302,14 +303,14 @@ dependencies = [
 
 [package.dev-dependencies]
 dev = [
-    { name = "anyio", extra = ["trio"] },
     { name = "pytest" },
     { name = "pytest-asyncio" },
 ]
 
 [package.metadata]
 requires-dist = [
-    { name = "aiosqlite", specifier = ">=0.20" },
+    { name = "aiosqlite", specifier = ">=0.19" },
+    { name = "anyio", extras = ["trio"], specifier = ">=4.0" },
     { name = "httpx", specifier = ">=0.27" },
     { name = "openai", specifier = ">=1.0" },
     { name = "pydantic", specifier = ">=2.0" },
@@ -317,7 +318,6 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "anyio", extras = ["trio"] },
     { name = "pytest", specifier = ">=8.0" },
     { name = "pytest-asyncio", specifier = ">=0.23" },
 ]
