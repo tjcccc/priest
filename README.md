@@ -26,7 +26,7 @@ Requires Python 3.11+ and [uv](https://docs.astral.sh/uv/).
 uv sync
 ```
 
-This creates a `.venv` and installs all dependencies in isolation. Dependencies: `pydantic>=2`, `httpx`, `aiosqlite`.
+This creates a `.venv` and installs all dependencies in isolation. Dependencies: `pydantic>=2`, `httpx`, `aiosqlite`, `openai>=1.0`, `anyio[trio]`.
 
 ## Quick start
 
@@ -128,20 +128,48 @@ PriestRequest(
 
 ## Providers
 
-Adapters included in Milestone 1:
-
 | Provider | Class | Notes |
 |----------|-------|-------|
-| Ollama | `OllamaProvider` | Default base URL: `http://localhost:11434` |
+| Ollama | `OllamaProvider` | Local models. Default base URL: `http://localhost:11434` |
+| OpenAI-compatible | `OpenAICompatProvider` | OpenAI, Gemini, Bailian, MiniMax, DeepSeek, Kimi, Groq, OpenRouter, and any custom `/v1/chat/completions` endpoint |
+| Anthropic | `AnthropicProvider` | Anthropic Claude. Uses the native `/v1/messages` API |
 
-Milestone 2 will add `OpenAIProvider`.
-
-Pass provider-specific options via `PriestConfig.provider_options`:
+### OpenAI-compatible adapter
 
 ```python
-# Disable thinking mode on Qwen3 models
-PriestConfig(provider="ollama", model="qwen3.5:9b", provider_options={"think": False})
+from priest.providers.openai_compat_provider import OpenAICompatProvider
+
+adapter = OpenAICompatProvider(
+    name="bailian",
+    base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
+    api_key="sk-...",
+    proxy="http://127.0.0.1:7890",  # optional
+)
 ```
+
+The adapter runs via the sync `openai` SDK in a worker thread to avoid Python 3.14+ compatibility issues with httpcore's anyio async TLS backend.
+
+### Anthropic adapter
+
+```python
+from priest.providers.anthropic_provider import AnthropicProvider
+
+adapter = AnthropicProvider(
+    api_key="sk-ant-...",
+    proxy="http://127.0.0.1:7890",  # optional
+)
+```
+
+### Provider options
+
+Pass provider-specific options via `PriestConfig.provider_options`. These are forwarded as extra fields in the request body (OpenAI: `extra_body`; Ollama/Anthropic: merged into the payload).
+
+```python
+# Enable/disable thinking mode on Qwen3 models (Bailian / Ollama)
+PriestConfig(provider="bailian", model="qwen3-32b", provider_options={"think": True})
+```
+
+Not all providers accept the same options — pass only what the target provider supports.
 
 ## Testing
 
@@ -182,6 +210,8 @@ priest/
 │   ├── memory_store.py    # InMemorySessionStore (tests/ephemeral)
 │   └── model.py           # Session, Turn dataclasses
 └── providers/
-    ├── base.py            # ProviderAdapter ABC, AdapterResult
-    └── ollama_provider.py # OllamaProvider
+    ├── base.py                    # ProviderAdapter ABC, AdapterResult
+    ├── ollama_provider.py         # OllamaProvider
+    ├── openai_compat_provider.py  # OpenAICompatProvider (OpenAI SDK, sync-in-thread)
+    └── anthropic_provider.py      # AnthropicProvider (httpx async)
 ```

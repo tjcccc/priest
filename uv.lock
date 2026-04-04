@@ -296,12 +296,8 @@ source = { editable = "." }
 dependencies = [
     { name = "aiosqlite" },
     { name = "httpx" },
-    { name = "pydantic" },
-]
-
-[package.optional-dependencies]
-openai = [
     { name = "openai" },
+    { name = "pydantic" },
 ]
 
 [package.dev-dependencies]
@@ -315,10 +311,9 @@ dev = [
 requires-dist = [
     { name = "aiosqlite", specifier = ">=0.20" },
     { name = "httpx", specifier = ">=0.27" },
-    { name = "openai", marker = "extra == 'openai'", specifier = ">=1.0" },
+    { name = "openai", specifier = ">=1.0" },
     { name = "pydantic", specifier = ">=2.0" },
 ]
-provides-extras = ["openai"]
 
 [package.metadata.requires-dev]
 dev = [
