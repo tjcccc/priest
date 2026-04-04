@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import time
+from typing import AsyncGenerator
 
 from priest.errors import (
     PriestError,
@@ -153,3 +154,61 @@ class PriestEngine:
             error=error_model,
             metadata=request.metadata,
         )
+
+    async def stream(self, request: PriestRequest) -> AsyncGenerator[str, None]:
+        """Yield text chunks as they arrive from the provider.
+
+        Session is saved automatically after the stream completes.
+        Raises PriestError subclasses on provider failure.
+        """
+        adapter = self._adapters.get(request.config.provider)
+        if adapter is None:
+            raise ProviderNotRegisteredError(request.config.provider)
+
+        profile = self._profile_loader.load(request.profile)
+
+        session = None
+        is_new_session = False
+
+        if request.session is not None and self._session_store is not None:
+            session_ref = request.session
+            if session_ref.continue_existing:
+                session = await self._session_store.get(session_ref.id)
+                if session is None:
+                    if session_ref.create_if_missing:
+                        session = await self._session_store.create(
+                            profile_name=request.profile,
+                            session_id=session_ref.id,
+                        )
+                        is_new_session = True
+                    else:
+                        raise SessionNotFoundError(session_ref.id)
+            else:
+                session = await self._session_store.create(profile_name=request.profile)
+                is_new_session = True
+
+        messages = build_messages(
+            profile=profile,
+            session=session,
+            prompt=request.prompt,
+            system_context=request.system_context,
+            extra_context=request.extra_context,
+            output_spec=request.output,
+        )
+
+        parts: list[str] = []
+        had_error = False
+        try:
+            async for chunk in adapter.stream(messages, request.config, request.output):
+                parts.append(chunk)
+                yield chunk
+        except PriestError as exc:
+            had_error = True
+            logger.warning("Provider error during stream: %s", exc)
+            raise
+        finally:
+            if not had_error and parts and session is not None and self._session_store is not None:
+                full_text = "".join(parts)
+                session.append_turn("user", request.prompt)
+                session.append_turn("assistant", full_text)
+                await self._session_store.save(session)

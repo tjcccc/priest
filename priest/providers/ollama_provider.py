@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import json
+from typing import AsyncGenerator
+
 import httpx
 
 from priest.errors import ProviderError, ProviderTimeoutError
@@ -67,6 +70,53 @@ class OllamaProvider(ProviderAdapter):
             input_tokens=data.get("prompt_eval_count"),
             output_tokens=data.get("eval_count"),
         )
+
+    async def stream(
+        self,
+        messages: list[dict],
+        config: PriestConfig,
+        output_spec: OutputSpec,
+    ) -> AsyncGenerator[str, None]:
+        payload: dict = {
+            "model": config.model,
+            "messages": messages,
+            "stream": True,
+        }
+
+        if config.max_output_tokens is not None:
+            payload.setdefault("options", {})["num_predict"] = config.max_output_tokens
+
+        if output_spec.provider_format == "json":
+            payload["format"] = "json"
+
+        payload.update(config.provider_options)
+
+        timeout = config.timeout_seconds or 60.0
+
+        try:
+            async with httpx.AsyncClient() as client:
+                async with client.stream(
+                    "POST",
+                    f"{self._base_url}/api/chat",
+                    json=payload,
+                    timeout=timeout,
+                ) as response:
+                    response.raise_for_status()
+                    async for line in response.aiter_lines():
+                        if not line:
+                            continue
+                        data = json.loads(line)
+                        content = data.get("message", {}).get("content", "")
+                        if content:
+                            yield content
+                        if data.get("done"):
+                            break
+        except httpx.TimeoutException:
+            raise ProviderTimeoutError("ollama", timeout)
+        except httpx.HTTPStatusError as exc:
+            raise ProviderError("ollama", f"HTTP {exc.response.status_code}: {exc.response.text}")
+        except httpx.RequestError as exc:
+            raise ProviderError("ollama", str(exc))
 
 
 def _map_finish_reason(reason: str | None) -> str | None:

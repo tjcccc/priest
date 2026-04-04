@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, AsyncGenerator
 
 from priest.schema.request import OutputSpec, PriestConfig
 
@@ -37,3 +37,18 @@ class ProviderAdapter(ABC):
         config: PriestConfig,
         output_spec: OutputSpec,
     ) -> AdapterResult: ...
+
+    async def stream(
+        self,
+        messages: list[dict],
+        config: PriestConfig,
+        output_spec: OutputSpec,
+    ) -> AsyncGenerator[str, None]:
+        """Yield text chunks as they arrive from the provider.
+
+        Default implementation calls complete() and yields the full text as
+        one chunk. Override in adapters that support native streaming.
+        """
+        result = await self.complete(messages, config, output_spec)
+        if result.text:
+            yield result.text

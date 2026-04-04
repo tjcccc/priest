@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import asyncio
+import threading
 from functools import partial
+from typing import AsyncGenerator
 
 import anyio
 from openai import OpenAI, APIConnectionError, APIStatusError, APITimeoutError
@@ -98,6 +101,71 @@ def _call_sync(*, api_key: str, base_url: str, timeout: float, proxy: str | None
         http_client=http_client,
     )
     return client.chat.completions.create(**kwargs)
+
+
+    async def stream(
+        self,
+        messages: list[dict],
+        config: PriestConfig,
+        output_spec: OutputSpec,
+    ) -> AsyncGenerator[str, None]:
+        kwargs: dict = {
+            "model": config.model,
+            "messages": messages,
+            "stream": True,
+        }
+
+        if config.max_output_tokens is not None:
+            kwargs["max_tokens"] = config.max_output_tokens
+
+        if output_spec.provider_format == "json":
+            kwargs["response_format"] = {"type": "json_object"}
+
+        if config.provider_options:
+            kwargs["extra_body"] = config.provider_options
+
+        loop = asyncio.get_event_loop()
+        q: asyncio.Queue[str | Exception | None] = asyncio.Queue()
+
+        def _run() -> None:
+            try:
+                import httpx as _httpx
+                http_client = _httpx.Client(proxy=self._proxy) if self._proxy else None
+                client = OpenAI(
+                    api_key=self._api_key or "dummy",
+                    base_url=self._base_url,
+                    timeout=config.timeout_seconds or 60.0,
+                    max_retries=0,
+                    http_client=http_client,
+                )
+                response = client.chat.completions.create(**kwargs)
+                for chunk in response:
+                    choices = chunk.choices
+                    if choices and choices[0].delta.content:
+                        loop.call_soon_threadsafe(q.put_nowait, choices[0].delta.content)
+            except Exception as exc:
+                loop.call_soon_threadsafe(q.put_nowait, exc)
+            finally:
+                loop.call_soon_threadsafe(q.put_nowait, None)
+
+        thread = threading.Thread(target=_run, daemon=True)
+        thread.start()
+        try:
+            while True:
+                item = await q.get()
+                if item is None:
+                    break
+                if isinstance(item, APITimeoutError):
+                    raise ProviderTimeoutError(self._name, config.timeout_seconds or 60.0)
+                if isinstance(item, APIStatusError):
+                    raise ProviderError(self._name, f"HTTP {item.status_code}: {item.message}")
+                if isinstance(item, APIConnectionError):
+                    raise ProviderError(self._name, str(item))
+                if isinstance(item, Exception):
+                    raise ProviderError(self._name, str(item))
+                yield item
+        finally:
+            thread.join(timeout=5)
 
 
 def _map_finish_reason(reason: str | None) -> str | None:
