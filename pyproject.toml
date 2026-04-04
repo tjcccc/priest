@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "priest"
+name = "priest-core"
 version = "0.2.0"
 description = "Pure core library for AI orchestration — transport-agnostic, host-agnostic, async-first"
 requires-python = ">=3.11"
