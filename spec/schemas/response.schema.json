@@ -1,0 +1,122 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12",
+  "$id": "priest/response",
+  "title": "PriestResponse",
+  "description": "Result of a single engine run.",
+  "type": "object",
+  "required": ["execution"],
+  "additionalProperties": false,
+  "properties": {
+    "text": {
+      "oneOf": [
+        { "type": "string" },
+        { "type": "null" }
+      ],
+      "description": "Raw text returned by the provider. Always the unmodified string — parsing is the caller's responsibility. Null on error."
+    },
+    "execution": {
+      "$ref": "#/$defs/ExecutionInfo"
+    },
+    "usage": {
+      "oneOf": [
+        { "$ref": "#/$defs/UsageInfo" },
+        { "type": "null" }
+      ],
+      "description": "Token usage. Null if the provider did not return usage data."
+    },
+    "session": {
+      "oneOf": [
+        { "$ref": "#/$defs/SessionInfo" },
+        { "type": "null" }
+      ],
+      "description": "Session state after this run. Null if no session was used."
+    },
+    "error": {
+      "oneOf": [
+        { "$ref": "#/$defs/PriestErrorModel" },
+        { "type": "null" }
+      ],
+      "description": "Error details if the run failed. Null on success."
+    },
+    "metadata": {
+      "type": "object",
+      "default": {},
+      "description": "Caller metadata echoed from PriestRequest.metadata unchanged."
+    }
+  },
+  "x-computed-properties": {
+    "ok": {
+      "type": "boolean",
+      "description": "Derived property: true when error is null. Not a stored field — implementations must compute it."
+    }
+  },
+  "$defs": {
+    "ExecutionInfo": {
+      "title": "ExecutionInfo",
+      "type": "object",
+      "required": ["provider", "model", "profile"],
+      "additionalProperties": false,
+      "properties": {
+        "provider": { "type": "string", "description": "Provider name from the request config." },
+        "model": { "type": "string", "description": "Model name from the request config." },
+        "latency_ms": {
+          "oneOf": [{ "type": "integer" }, { "type": "null" }],
+          "description": "Wall-clock time from start of run() to return, in milliseconds."
+        },
+        "profile": { "type": "string", "description": "Profile name from the request." },
+        "finished_reason": {
+          "oneOf": [
+            { "type": "string", "enum": ["stop", "length", "error", "unknown"] },
+            { "type": "null" }
+          ],
+          "description": "Normalized finish reason. 'error' when the run failed. Null if the provider did not report one."
+        }
+      }
+    },
+    "UsageInfo": {
+      "title": "UsageInfo",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "input_tokens": { "oneOf": [{ "type": "integer" }, { "type": "null" }] },
+        "output_tokens": { "oneOf": [{ "type": "integer" }, { "type": "null" }] },
+        "total_tokens": {
+          "oneOf": [{ "type": "integer" }, { "type": "null" }],
+          "description": "input_tokens + output_tokens. Null if both are null."
+        },
+        "estimated_cost_usd": { "oneOf": [{ "type": "number" }, { "type": "null" }] }
+      }
+    },
+    "SessionInfo": {
+      "title": "SessionInfo",
+      "type": "object",
+      "required": ["id"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "description": "Session ID after this run." },
+        "is_new": { "type": "boolean", "default": false, "description": "True if this run created the session." },
+        "turn_count": { "type": "integer", "default": 0, "description": "Total number of turns in the session after this run." }
+      }
+    },
+    "PriestErrorModel": {
+      "title": "PriestErrorModel",
+      "description": "Structured error in PriestResponse.error. Distinct from the PriestError exception thrown for PROVIDER_NOT_REGISTERED.",
+      "type": "object",
+      "required": ["code", "message"],
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "type": "string",
+          "description": "Error code. See behavior/error-codes.md for all defined values."
+        },
+        "message": { "type": "string" },
+        "details": {
+          "type": "object",
+          "additionalProperties": { "type": "string" },
+          "default": {},
+          "description": "Structured details. All values are strings (non-string values are stringified at creation)."
+        }
+      }
+    }
+  }
+}

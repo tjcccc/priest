@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12",
+  "$id": "priest/config",
+  "title": "PriestConfig",
+  "description": "Provider and model configuration for a single priest run.",
+  "type": "object",
+  "required": ["provider", "model"],
+  "additionalProperties": false,
+  "properties": {
+    "provider": {
+      "type": "string",
+      "description": "Registered provider name. Must match a key in the engine's adapter registry."
+    },
+    "model": {
+      "type": "string",
+      "description": "Model identifier passed directly to the provider."
+    },
+    "timeout_seconds": {
+      "type": "number",
+      "minimum": 0,
+      "default": 60.0,
+      "description": "Request timeout in seconds. Defaults to 60.0 if null or omitted."
+    },
+    "max_output_tokens": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Maximum tokens to generate. Provider-specific field name (e.g. num_predict for Ollama, max_tokens for OpenAI). Omitted from request if null."
+    },
+    "cost_limit": {
+      "type": "number",
+      "description": "Advisory cost ceiling in USD. The engine does NOT enforce this — enforcement is the host application's responsibility."
+    },
+    "provider_options": {
+      "type": "object",
+      "description": "Arbitrary key/value pairs merged directly into the provider request payload. Semantics are provider-specific. Examples: {\"think\": false} for Ollama/Qwen3, {\"temperature\": 0.7} for any OpenAI-compatible provider. Values may be any JSON type.",
+      "default": {}
+    }
+  }
+}

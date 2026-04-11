@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12",
+  "$id": "priest/profile",
+  "title": "Profile",
+  "description": "Loaded profile representation passed to the engine. This is the in-memory form after filesystem loading — not the raw filesystem layout (see behavior/profile-loading.md for the directory structure).",
+  "type": "object",
+  "required": ["name", "identity", "rules", "custom", "memories"],
+  "additionalProperties": false,
+  "properties": {
+    "name": {
+      "type": "string",
+      "description": "Profile name, matching the directory name used to load it."
+    },
+    "identity": {
+      "type": "string",
+      "description": "Content of PROFILE.md. May be empty string if the file is absent (non-default profiles only)."
+    },
+    "rules": {
+      "type": "string",
+      "description": "Content of RULES.md. Empty string if absent."
+    },
+    "custom": {
+      "type": "string",
+      "description": "Content of CUSTOM.md. Empty string if absent."
+    },
+    "memories": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Contents of memory files from the memories/ subdirectory. Files are loaded in ascending lexicographic order by filename. Only .md and .txt files are included. Empty array if the directory is absent."
+    },
+    "meta": {
+      "type": "object",
+      "default": {},
+      "description": "Parsed content of profile.toml. Reserved for future use — the engine does not consume this field. Empty object if profile.toml is absent."
+    }
+  }
+}

@@ -1,0 +1,102 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12",
+  "$id": "priest/request",
+  "title": "PriestRequest",
+  "description": "A single engine run request.",
+  "type": "object",
+  "required": ["config", "prompt"],
+  "additionalProperties": false,
+  "properties": {
+    "config": {
+      "$ref": "config.schema.json",
+      "description": "Provider and model configuration."
+    },
+    "profile": {
+      "type": "string",
+      "default": "default",
+      "description": "Profile name to load. Defaults to 'default'. The engine loads the matching profile from the configured profile loader."
+    },
+    "prompt": {
+      "type": "string",
+      "description": "The user's prompt. Becomes the content of the final user message."
+    },
+    "session": {
+      "oneOf": [
+        { "$ref": "#/$defs/SessionRef" },
+        { "type": "null" }
+      ],
+      "default": null,
+      "description": "Session reference. If null, no session is created or continued."
+    },
+    "system_context": {
+      "type": "array",
+      "items": { "type": "string" },
+      "default": [],
+      "description": "App-layer strings injected at the top of the system prompt, above profile content. Use for runtime policy: current date, environment name, guardrails, etc. Empty strings are ignored."
+    },
+    "extra_context": {
+      "type": "array",
+      "items": { "type": "string" },
+      "default": [],
+      "description": "Additional strings appended to the user turn after the prompt, joined with double newlines. Empty strings are ignored."
+    },
+    "output": {
+      "$ref": "#/$defs/OutputSpec",
+      "description": "Output format hints. All fields default to null (no-op)."
+    },
+    "metadata": {
+      "type": "object",
+      "default": {},
+      "description": "Arbitrary caller metadata. Passed through unchanged to PriestResponse.metadata."
+    }
+  },
+  "$defs": {
+    "SessionRef": {
+      "title": "SessionRef",
+      "description": "Reference to a session to create or continue.",
+      "type": "object",
+      "required": ["id"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Session identifier. When creating a new session (create_if_missing=true), this exact ID is used — session creation is idempotent on the same ID."
+        },
+        "continue_existing": {
+          "type": "boolean",
+          "default": true,
+          "description": "If true, look up the session by ID before creating. If false, always create a new session (ID is ignored for lookup)."
+        },
+        "create_if_missing": {
+          "type": "boolean",
+          "default": true,
+          "description": "Only relevant when continue_existing=true. If the session does not exist: true creates it with the provided ID; false raises SESSION_NOT_FOUND."
+        }
+      }
+    },
+    "OutputSpec": {
+      "title": "OutputSpec",
+      "description": "Output format hints. Both fields are optional and independent.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "provider_format": {
+          "oneOf": [
+            { "type": "string", "enum": ["json"] },
+            { "type": "null" }
+          ],
+          "default": null,
+          "description": "Activates provider-native structured output when supported (e.g. Ollama format field, OpenAI response_format). Currently only 'json' is defined."
+        },
+        "prompt_format": {
+          "oneOf": [
+            { "type": "string", "enum": ["json", "xml", "code"] },
+            { "type": "null" }
+          ],
+          "default": null,
+          "description": "Injects a natural-language format instruction into the system prompt. Works with any provider. See behavior/context-assembly.md for the exact instruction strings."
+        }
+      }
+    }
+  }
+}
