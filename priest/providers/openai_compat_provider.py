@@ -83,26 +83,6 @@ class OpenAICompatProvider(ProviderAdapter):
             output_tokens=usage.completion_tokens if usage else None,
         )
 
-
-def _call_sync(*, api_key: str, base_url: str, timeout: float, proxy: str | None, kwargs: dict):
-    """Sync call executed in a worker thread.
-
-    Uses the synchronous OpenAI client so httpcore uses its plain socket
-    backend instead of the anyio async TLS backend (broken on Python 3.14).
-    """
-    import httpx
-
-    http_client = httpx.Client(proxy=proxy) if proxy else None
-    client = OpenAI(
-        api_key=api_key,
-        base_url=base_url,
-        timeout=timeout,
-        max_retries=0,
-        http_client=http_client,
-    )
-    return client.chat.completions.create(**kwargs)
-
-
     async def stream(
         self,
         messages: list[dict],
@@ -124,7 +104,7 @@ def _call_sync(*, api_key: str, base_url: str, timeout: float, proxy: str | None
         if config.provider_options:
             kwargs["extra_body"] = config.provider_options
 
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         q: asyncio.Queue[str | Exception | None] = asyncio.Queue()
 
         def _run() -> None:
@@ -166,6 +146,25 @@ def _call_sync(*, api_key: str, base_url: str, timeout: float, proxy: str | None
                 yield item
         finally:
             thread.join(timeout=5)
+
+
+def _call_sync(*, api_key: str, base_url: str, timeout: float, proxy: str | None, kwargs: dict):
+    """Sync call executed in a worker thread.
+
+    Uses the synchronous OpenAI client so httpcore uses its plain socket
+    backend instead of the anyio async TLS backend (broken on Python 3.14).
+    """
+    import httpx
+
+    http_client = httpx.Client(proxy=proxy) if proxy else None
+    client = OpenAI(
+        api_key=api_key,
+        base_url=base_url,
+        timeout=timeout,
+        max_retries=0,
+        http_client=http_client,
+    )
+    return client.chat.completions.create(**kwargs)
 
 
 def _map_finish_reason(reason: str | None) -> str | None:

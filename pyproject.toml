@@ -6,7 +6,19 @@ build-backend = "hatchling.build"
 name = "priest-core"
 version = "0.2.1"
 description = "Pure core library for AI orchestration — transport-agnostic, host-agnostic, async-first"
+readme = "README.md"
 requires-python = ">=3.11"
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Typing :: Typed",
+]
 dependencies = [
     "pydantic>=2.0",
     "aiosqlite>=0.19",
@@ -14,6 +26,11 @@ dependencies = [
     "openai>=1.0",
     "anyio[trio]>=4.0",
 ]
+
+[project.urls]
+Homepage = "https://github.com/tjcccc/priest"
+Repository = "https://github.com/tjcccc/priest"
+Issues = "https://github.com/tjcccc/priest/issues"
 
 [dependency-groups]
 dev = [
@@ -26,3 +43,6 @@ packages = ["priest"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
+markers = [
+    "integration: tests that require a live provider (e.g. Ollama running locally)",
+]

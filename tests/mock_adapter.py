@@ -1,4 +1,7 @@
+from typing import AsyncGenerator
+
 from priest.providers.base import AdapterResult, ProviderAdapter
+from priest.schema.request import OutputSpec, PriestConfig
 
 
 class MockAdapter(ProviderAdapter):
@@ -18,3 +21,13 @@ class MockAdapter(ProviderAdapter):
             input_tokens=10,
             output_tokens=5,
         )
+
+    async def stream(
+        self,
+        messages: list[dict],
+        config: PriestConfig,
+        output_spec: OutputSpec,
+    ) -> AsyncGenerator[str, None]:
+        """Yield text one word at a time."""
+        for word in self._text.split():
+            yield word

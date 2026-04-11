@@ -117,7 +117,7 @@ class AnthropicProvider(ProviderAdapter):
         }
 
         timeout = config.timeout_seconds or 60.0
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         q: asyncio.Queue[str | Exception | None] = asyncio.Queue()
 
         def _run() -> None:

@@ -160,6 +160,10 @@ class PriestEngine:
 
         Session is saved automatically after the stream completes.
         Raises PriestError subclasses on provider failure.
+
+        Note: unlike run(), stream() yields only raw text chunks — there is no
+        final PriestResponse. Usage stats, latency, and session info are not
+        returned. If you need structured metadata, use run() instead.
         """
         adapter = self._adapters.get(request.config.provider)
         if adapter is None:

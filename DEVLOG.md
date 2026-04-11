@@ -1,5 +1,29 @@
 # DEVLOG
 
+## 2026-04-11 — v1.0.0 pre-release fixes
+
+Pre-release hardening pass. All issues are resolved; version tag will follow once LICENSE is decided.
+
+**Bug fixes:**
+- `OpenAICompatProvider.stream()` was nested inside `_call_sync()` (dead code since it was introduced). Moved to class level — streaming now actually works for OpenAI-compatible providers.
+- `asyncio.get_event_loop()` → `asyncio.get_running_loop()` in both `AnthropicProvider` and `OpenAICompatProvider` stream methods. The old call is deprecated in Python 3.10+ and breaks in 3.14.
+
+**New:**
+- `ProviderRateLimitedError` concrete exception class added — the `PROVIDER_RATE_LIMITED` error code existed but had no corresponding exception type.
+- Streaming test suite added (`tests/test_streaming.py`): 6 tests covering chunk delivery, session persistence after stream, session continuation, unknown-provider error, and no-session-store path.
+- `MockAdapter.stream()` implemented — yields text one word at a time for unit testing.
+- `py.typed` marker added (PEP 561) — signals typed package to downstream type checkers.
+
+**Public API expanded:**
+- `__init__.py` now exports all response sub-types (`ExecutionInfo`, `UsageInfo`, `SessionInfo`), all exception types and `ErrorCode`, and adapter base types (`ProviderAdapter`, `AdapterResult`) — everything a downstream library author or custom-provider implementer needs.
+
+**Packaging:**
+- `pyproject.toml`: added `readme`, `classifiers`, `[project.urls]`, and registered `integration` pytest marker (eliminates warning on unit test runs).
+
+**Tests:** 35 unit tests passing. 4 integration tests (Ollama) untouched.
+
+---
+
 ## 2026-04-01 — Core semantics cleanup
 
 Post-review fixes addressing session ID coherence, output format design, and cost_limit noise.

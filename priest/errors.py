@@ -80,3 +80,14 @@ class ProviderError(PriestError):
             f"Provider '{provider}' error: {message}",
             provider=provider,
         )
+
+
+class ProviderRateLimitedError(PriestError):
+    def __init__(self, provider: str, retry_after: float | None = None) -> None:
+        super().__init__(
+            ErrorCode.PROVIDER_RATE_LIMITED,
+            f"Provider '{provider}' rate limited"
+            + (f" — retry after {retry_after}s" if retry_after is not None else ""),
+            provider=provider,
+            retry_after=retry_after,
+        )
