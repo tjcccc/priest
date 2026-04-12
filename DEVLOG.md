@@ -1,5 +1,9 @@
 # DEVLOG
 
+## 2026-04-12 — v1.0.0 release
+
+First stable release. Version bumped to 1.0.0.
+
 ## 2026-04-11 — v1.0.0 pre-release fixes
 
 Pre-release hardening pass. All issues are resolved; version tag will follow once LICENSE is decided.
