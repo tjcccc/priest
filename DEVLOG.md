@@ -1,5 +1,11 @@
 # DEVLOG
 
+## TODO
+
+- **Image support in `PriestRequest`:** Add an `images: list[str]` field (base64 strings or URLs) to `PriestRequest`. Provider adapters that support multimodal input (Anthropic, OpenAI-compat, Ollama vision models) should forward the images alongside the prompt. Needed by `priests` service to expose image upload via `/v1/run` and `/v1/chat`.
+
+---
+
 ## 2026-04-12 — v1.0.0 release
 
 First stable release. Version bumped to 1.0.0.
