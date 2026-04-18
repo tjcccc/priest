@@ -30,6 +30,12 @@
       "type": "number",
       "description": "Advisory cost ceiling in USD. The engine does NOT enforce this — enforcement is the host application's responsibility."
     },
+    "max_system_chars": {
+      "type": ["integer", "null"],
+      "minimum": 1,
+      "default": null,
+      "description": "Optional ceiling on the assembled system prompt size, in characters. When set, the library trims `request.memory` entries (tail first), then `profile.memories` entries (tail first), until the system prompt fits. `request.context`, rules, identity, custom, and format instructions are never trimmed. If the budget is still exceeded after all memory is dropped, the library logs a warning and returns the system prompt as-is. Null (default) disables trimming entirely."
+    },
     "provider_options": {
       "type": "object",
       "description": "Arbitrary key/value pairs merged directly into the provider request payload. Semantics are provider-specific. Examples: {\"think\": false} for Ollama/Qwen3, {\"temperature\": 0.7} for any OpenAI-compatible provider. Values may be any JSON type.",

@@ -18,6 +18,7 @@ class ErrorCode(StrEnum):
 
     # Request errors
     REQUEST_INVALID = "REQUEST_INVALID"
+    IMAGE_LOAD_ERROR = "IMAGE_LOAD_ERROR"
 
     # Generic
     INTERNAL_ERROR = "INTERNAL_ERROR"
@@ -79,6 +80,15 @@ class ProviderError(PriestError):
             ErrorCode.PROVIDER_ERROR,
             f"Provider '{provider}' error: {message}",
             provider=provider,
+        )
+
+
+class ImageLoadError(PriestError):
+    def __init__(self, path: str, reason: str) -> None:
+        super().__init__(
+            ErrorCode.IMAGE_LOAD_ERROR,
+            f"Failed to load image '{path}': {reason}",
+            path=path,
         )
 
 

@@ -28,7 +28,7 @@ class OllamaProvider(ProviderAdapter):
     ) -> AdapterResult:
         payload: dict = {
             "model": config.model,
-            "messages": messages,
+            "messages": _translate_messages(messages),
             "stream": False,
         }
 
@@ -79,7 +79,7 @@ class OllamaProvider(ProviderAdapter):
     ) -> AsyncGenerator[str, None]:
         payload: dict = {
             "model": config.model,
-            "messages": messages,
+            "messages": _translate_messages(messages),
             "stream": True,
         }
 
@@ -117,6 +117,40 @@ class OllamaProvider(ProviderAdapter):
             raise ProviderError("ollama", f"HTTP {exc.response.status_code}: {exc.response.text}")
         except httpx.RequestError as exc:
             raise ProviderError("ollama", str(exc))
+
+
+def _translate_messages(messages: list[dict]) -> list[dict]:
+    """Translate OpenAI-format multimodal content blocks to Ollama's format.
+
+    Ollama uses a top-level 'images' field (list of base64 strings) rather than
+    inline content blocks. HTTP/HTTPS image URLs are not supported — raise if encountered.
+    """
+    result = []
+    for msg in messages:
+        content = msg.get("content")
+        if msg["role"] == "user" and isinstance(content, list):
+            text_parts: list[str] = []
+            image_b64s: list[str] = []
+            for block in content:
+                if block.get("type") == "text":
+                    text_parts.append(block["text"])
+                elif block.get("type") == "image_url":
+                    url: str = block["image_url"]["url"]
+                    if url.startswith("data:"):
+                        image_b64s.append(url.split(",", 1)[1])
+                    else:
+                        raise ProviderError(
+                            "ollama",
+                            "Ollama requires base64 images; HTTP/HTTPS URLs are not supported. "
+                            "Use ImageInput(path=...) or ImageInput(data=...) instead.",
+                        )
+            new_msg: dict = {"role": "user", "content": " ".join(text_parts)}
+            if image_b64s:
+                new_msg["images"] = image_b64s
+            result.append(new_msg)
+        else:
+            result.append(msg)
+    return result
 
 
 def _map_finish_reason(reason: str | None) -> str | None:

@@ -14,6 +14,11 @@ class ProfileLoader(Protocol):
     def load(self, name: str) -> Profile: ...
 
 
+# Cache key: (max mtime of any tracked file, count of tracked files).
+# If either changes (edit, add, remove), the cached Profile is evicted.
+_CacheKey = tuple[float, int]
+
+
 class FilesystemProfileLoader:
     """Loads profiles from a directory on disk.
 
@@ -21,22 +26,61 @@ class FilesystemProfileLoader:
     that directory first. If a profile is not found there (or no root is given),
     the built-in default profile is returned for name='default'. Any other
     missing profile raises ProfileNotFoundError.
+
+    Results are cached per loader instance keyed on (max mtime, file count) of
+    PROFILE.md, RULES.md, CUSTOM.md, profile.toml, and every file under memories/.
+    Any edit, add, or remove invalidates the cache on the next load.
     """
 
     def __init__(self, profiles_root: Path | None = None) -> None:
         self._root = profiles_root
+        self._cache: dict[str, tuple[_CacheKey, Profile]] = {}
 
     def load(self, name: str) -> Profile:
         if self._root is not None:
             profile_dir = self._root / name
             profile_md = profile_dir / "PROFILE.md"
             if profile_md.exists():
-                return self._load_from_dir(name, profile_dir)
+                return self._load_from_dir_cached(name, profile_dir)
 
         if name == "default":
             return get_default_profile()
 
         raise ProfileNotFoundError(name)
+
+    def _load_from_dir_cached(self, name: str, profile_dir: Path) -> Profile:
+        tracked = self._tracked_files(profile_dir)
+        cache_key = self._cache_key(tracked)
+
+        cached = self._cache.get(name)
+        if cached is not None and cached[0] == cache_key:
+            return cached[1]
+
+        profile = self._load_from_dir(name, profile_dir)
+        self._cache[name] = (cache_key, profile)
+        return profile
+
+    @staticmethod
+    def _tracked_files(profile_dir: Path) -> list[Path]:
+        files: list[Path] = []
+        for fname in ("PROFILE.md", "RULES.md", "CUSTOM.md", "profile.toml"):
+            p = profile_dir / fname
+            if p.exists():
+                files.append(p)
+        memories_dir = profile_dir / "memories"
+        if memories_dir.is_dir():
+            files.extend(
+                f for f in memories_dir.iterdir()
+                if f.suffix in {".md", ".txt"} and f.is_file()
+            )
+        return files
+
+    @staticmethod
+    def _cache_key(files: list[Path]) -> _CacheKey:
+        if not files:
+            return (0.0, 0)
+        max_mtime = max(f.stat().st_mtime for f in files)
+        return (max_mtime, len(files))
 
     def _load_from_dir(self, name: str, profile_dir: Path) -> Profile:
         profile_md = profile_dir / "PROFILE.md"

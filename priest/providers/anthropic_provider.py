@@ -36,15 +36,15 @@ class AnthropicProvider(ProviderAdapter):
         config: PriestConfig,
         output_spec: OutputSpec,
     ) -> AdapterResult:
-        # Anthropic requires system content as a top-level field.
         system_parts = [m["content"] for m in messages if m["role"] == "system"]
-        turns = [m for m in messages if m["role"] != "system"]
+        turns = _translate_messages([m for m in messages if m["role"] != "system"])
 
         payload: dict = {
             "model": config.model,
             "messages": turns,
             "max_tokens": config.max_output_tokens or _DEFAULT_MAX_TOKENS,
         }
+
 
         if system_parts:
             payload["system"] = "\n\n".join(system_parts)
@@ -96,7 +96,7 @@ class AnthropicProvider(ProviderAdapter):
         output_spec: OutputSpec,
     ) -> AsyncGenerator[str, None]:
         system_parts = [m["content"] for m in messages if m["role"] == "system"]
-        turns = [m for m in messages if m["role"] != "system"]
+        turns = _translate_messages([m for m in messages if m["role"] != "system"])
 
         payload: dict = {
             "model": config.model,
@@ -170,6 +170,41 @@ class AnthropicProvider(ProviderAdapter):
                 yield item
         finally:
             thread.join(timeout=5)
+
+
+def _translate_messages(messages: list[dict]) -> list[dict]:
+    """Translate OpenAI-format multimodal content blocks to Anthropic's format.
+
+    OpenAI image_url blocks become Anthropic image blocks.
+    Data URIs are split into base64 + media_type. HTTP/HTTPS URLs use Anthropic's url source.
+    Text-only messages (string content) are passed through unchanged.
+    """
+    result = []
+    for msg in messages:
+        content = msg.get("content")
+        if isinstance(content, list):
+            blocks: list[dict] = []
+            for block in content:
+                if block.get("type") == "text":
+                    blocks.append({"type": "text", "text": block["text"]})
+                elif block.get("type") == "image_url":
+                    url: str = block["image_url"]["url"]
+                    if url.startswith("data:"):
+                        header, b64data = url.split(",", 1)
+                        media_type = header.split(":")[1].split(";")[0]
+                        blocks.append({
+                            "type": "image",
+                            "source": {"type": "base64", "media_type": media_type, "data": b64data},
+                        })
+                    else:
+                        blocks.append({
+                            "type": "image",
+                            "source": {"type": "url", "url": url},
+                        })
+            result.append({"role": msg["role"], "content": blocks})
+        else:
+            result.append(msg)
+    return result
 
 
 def _map_finish_reason(reason: str | None) -> str | None:

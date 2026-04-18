@@ -72,3 +72,57 @@ def test_missing_non_default_profile_raises_without_root():
     loader = FilesystemProfileLoader()
     with pytest.raises(ProfileNotFoundError):
         loader.load("nonexistent")
+
+
+def test_loader_caches_profile(tmp_path):
+    """Second load with unchanged files returns the cached Profile instance."""
+    profile_dir = tmp_path / "cached"
+    profile_dir.mkdir()
+    (profile_dir / "PROFILE.md").write_text("Identity.")
+
+    loader = FilesystemProfileLoader(tmp_path)
+    p1 = loader.load("cached")
+    p2 = loader.load("cached")
+
+    assert p1 is p2  # same object — cache hit
+
+
+def test_loader_invalidates_on_mtime_change(tmp_path):
+    """Editing any tracked file invalidates the cache."""
+    import time
+
+    profile_dir = tmp_path / "edit"
+    profile_dir.mkdir()
+    profile_md = profile_dir / "PROFILE.md"
+    profile_md.write_text("First.")
+
+    loader = FilesystemProfileLoader(tmp_path)
+    p1 = loader.load("edit")
+
+    # Ensure a visible mtime bump across platforms with coarse FS timestamps.
+    time.sleep(0.01)
+    profile_md.write_text("Second.")
+    import os as _os
+    now = time.time()
+    _os.utime(profile_md, (now, now + 1))
+
+    p2 = loader.load("edit")
+    assert p2 is not p1
+    assert "Second." in p2.identity
+
+
+def test_loader_invalidates_on_memory_file_added(tmp_path):
+    """Adding a new memory file invalidates the cache."""
+    profile_dir = tmp_path / "addmem"
+    (profile_dir / "memories").mkdir(parents=True)
+    (profile_dir / "PROFILE.md").write_text("Ident.")
+    (profile_dir / "memories" / "01.md").write_text("One.")
+
+    loader = FilesystemProfileLoader(tmp_path)
+    p1 = loader.load("addmem")
+    assert len(p1.memories) == 1
+
+    (profile_dir / "memories" / "02.md").write_text("Two.")
+    p2 = loader.load("addmem")
+    assert p2 is not p1
+    assert len(p2.memories) == 2

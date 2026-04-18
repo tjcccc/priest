@@ -85,9 +85,12 @@ class PriestEngine:
             profile=profile,
             session=session,
             prompt=request.prompt,
-            system_context=request.system_context,
-            extra_context=request.extra_context,
+            context=request.context,
+            memory=request.memory,
+            user_context=request.user_context,
             output_spec=request.output,
+            images=request.images or None,
+            max_system_chars=request.config.max_system_chars,
         )
 
         # --- Call provider ---
@@ -195,9 +198,12 @@ class PriestEngine:
             profile=profile,
             session=session,
             prompt=request.prompt,
-            system_context=request.system_context,
-            extra_context=request.extra_context,
+            context=request.context,
+            memory=request.memory,
+            user_context=request.user_context,
             output_spec=request.output,
+            images=request.images or None,
+            max_system_chars=request.config.max_system_chars,
         )
 
         parts: list[str] = []

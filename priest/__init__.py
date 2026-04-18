@@ -10,7 +10,7 @@ from priest.errors import (
     SessionNotFoundError,
 )
 from priest.providers.base import AdapterResult, ProviderAdapter
-from priest.schema.request import OutputSpec, PriestConfig, PriestRequest, SessionRef
+from priest.schema.request import ImageInput, OutputSpec, PriestConfig, PriestRequest, SessionRef
 from priest.schema.response import ExecutionInfo, PriestResponse, SessionInfo, UsageInfo
 
 __all__ = [
@@ -21,6 +21,7 @@ __all__ = [
     "PriestRequest",
     "SessionRef",
     "OutputSpec",
+    "ImageInput",
     # Response types
     "PriestResponse",
     "ExecutionInfo",

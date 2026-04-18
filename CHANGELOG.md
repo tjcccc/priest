@@ -2,6 +2,47 @@
 
 All notable changes to `priest` are documented here.
 
+## [2.0.0] — 2026-04-18
+
+### Breaking
+- `PriestRequest.system_context` and `PriestRequest.memory_context` are replaced with `PriestRequest.context` (raw, untouched) and `PriestRequest.memory` (deduped, trimmable).
+- `PriestRequest.extra_context` renamed to `PriestRequest.user_context` (same semantics).
+
+### Added
+- `PriestConfig.max_system_chars: int | None` — optional system prompt size budget. When set, the library trims `request.memory` and then `profile.memories` from the tail until the budget is met. `context`, rules, identity, custom, and format instructions are never trimmed. Defaults to `None` (no trimming).
+- Deduplication: `request.memory` entries whose stripped content matches another memory entry or any `profile.memories` entry are dropped during assembly.
+- `## Memory` section: dynamic memory entries from `request.memory` are rendered under a dedicated `## Memory\n\n` heading, after the `## Loaded Memories` block.
+- `FilesystemProfileLoader` now caches loaded `Profile` objects per-instance keyed on the max mtime and file count across `PROFILE.md`, `RULES.md`, `CUSTOM.md`, `profile.toml`, and files under `memories/`. Any edit, add, or remove invalidates the cache.
+
+### Migration
+```python
+# v1
+PriestRequest(
+    ...,
+    system_context=[guide, "Running inside priests CLI."],
+    memory_context=[memory_block],
+    extra_context=[search_result],
+)
+# v2
+PriestRequest(
+    ...,
+    context=[guide, "Running inside priests CLI."],
+    memory=[memory_block],
+    user_context=[search_result],
+)
+```
+
+### Protocol spec
+- Spec version bumped to 2.0.0 (see `spec/CHANGELOG.md`).
+
+---
+
+## [1.0.0] — 2026-04-12
+
+First stable release. Established the public API surface, the protocol spec, and streaming support.
+
+---
+
 ## [0.2.1] — 2026-04-04
 
 ### Fixed

@@ -170,7 +170,6 @@ class TestMemories:
     @pytest.mark.asyncio
     async def test_memories_included_in_system_message(self):
         """Memory content from profile is present in the system prompt sent to provider."""
-        from unittest.mock import patch
         from priest.profile.context_builder import build_messages
 
         profile = Profile(
@@ -190,8 +189,9 @@ class TestMemories:
             profile=profile,
             session=None,
             prompt="Hello.",
-            system_context=[],
-            extra_context=[],
+            context=[],
+            memory=[],
+            user_context=[],
             output_spec=OutputSpec(),
         )
 
@@ -214,8 +214,8 @@ class TestMemories:
         assert "MANGO" in profile.memories[0]
 
     @pytest.mark.asyncio
-    async def test_system_context_appears_before_memories(self):
-        """App-layer system_context is injected above profile memories."""
+    async def test_context_appears_before_memories(self):
+        """App-layer context is injected above profile memories."""
         from priest.profile.context_builder import build_messages
         from priest.schema.request import OutputSpec
 
@@ -232,14 +232,353 @@ class TestMemories:
             profile=profile,
             session=None,
             prompt="Hello.",
-            system_context=["App policy: be brief."],
-            extra_context=[],
+            context=["App policy: be brief."],
+            memory=[],
+            user_context=[],
             output_spec=OutputSpec(),
         )
 
         system_msg = next(m for m in messages if m["role"] == "system")
         content = system_msg["content"]
         assert content.index("App policy") < content.index("Memory:")
+
+    @pytest.mark.asyncio
+    async def test_memory_injected_after_profile_memories(self):
+        """Dynamic memory entries appear after static profile memories."""
+        from priest.profile.context_builder import build_messages
+        from priest.schema.request import OutputSpec
+
+        profile = Profile(
+            name="test",
+            identity="",
+            rules="",
+            custom="",
+            memories=["Static: user likes jazz."],
+            meta={},
+        )
+
+        messages = build_messages(
+            profile=profile,
+            session=None,
+            prompt="Hello.",
+            context=[],
+            memory=["Dynamic: user just asked about Miles Davis."],
+            user_context=[],
+            output_spec=OutputSpec(),
+        )
+
+        system_msg = next(m for m in messages if m["role"] == "system")
+        content = system_msg["content"]
+        assert "Static: user likes jazz." in content
+        assert "Dynamic: user just asked about Miles Davis." in content
+        assert content.index("Static:") < content.index("Dynamic:")
+
+    @pytest.mark.asyncio
+    async def test_memory_section_absent_when_empty(self):
+        """No ## Memory section injected when memory is empty."""
+        from priest.profile.context_builder import build_messages
+        from priest.schema.request import OutputSpec
+
+        profile = Profile(name="test", identity="Hi.", rules="", custom="", memories=[], meta={})
+
+        messages = build_messages(
+            profile=profile,
+            session=None,
+            prompt="Hello.",
+            context=[],
+            memory=[],
+            user_context=[],
+            output_spec=OutputSpec(),
+        )
+
+        system_msg = next(m for m in messages if m["role"] == "system")
+        assert "## Memory" not in system_msg["content"]
+
+    @pytest.mark.asyncio
+    async def test_memory_deduped_within_self(self):
+        """Duplicate entries in `memory` (by stripped content) are collapsed."""
+        from priest.profile.context_builder import build_messages
+        from priest.schema.request import OutputSpec
+
+        profile = Profile(name="test", identity="", rules="", custom="", memories=[], meta={})
+
+        messages = build_messages(
+            profile=profile, session=None, prompt="Hi.",
+            context=[], user_context=[],
+            memory=["Fact A.", "  Fact A.  ", "Fact B.", "Fact A."],
+            output_spec=OutputSpec(),
+        )
+        system_msg = next(m for m in messages if m["role"] == "system")
+        content = system_msg["content"]
+        assert content.count("Fact A.") == 1
+        assert content.count("Fact B.") == 1
+
+    @pytest.mark.asyncio
+    async def test_memory_deduped_against_profile_memories(self):
+        """Memory entries matching profile.memories (stripped) are dropped."""
+        from priest.profile.context_builder import build_messages
+        from priest.schema.request import OutputSpec
+
+        profile = Profile(
+            name="test", identity="", rules="", custom="",
+            memories=["User likes jazz."],
+            meta={},
+        )
+        messages = build_messages(
+            profile=profile, session=None, prompt="Hi.",
+            context=[], user_context=[],
+            memory=["User likes jazz.", "New fact."],
+            output_spec=OutputSpec(),
+        )
+        system_msg = next(m for m in messages if m["role"] == "system")
+        content = system_msg["content"]
+        # 'User likes jazz.' should appear exactly once (in profile memories block),
+        # 'New fact.' should appear in the dynamic memory block.
+        assert content.count("User likes jazz.") == 1
+        assert "New fact." in content
+
+    @pytest.mark.asyncio
+    async def test_trim_drops_dynamic_memory_tail_first(self):
+        """When max_system_chars is exceeded, dynamic memory is trimmed tail-first."""
+        from priest.profile.context_builder import build_messages
+        from priest.schema.request import OutputSpec
+
+        profile = Profile(name="test", identity="", rules="", custom="", memories=[], meta={})
+        entries = [f"Entry-{i}-" + "x" * 50 for i in range(10)]
+
+        messages = build_messages(
+            profile=profile, session=None, prompt="Hi.",
+            context=[], user_context=[], memory=entries,
+            output_spec=OutputSpec(),
+            max_system_chars=200,
+        )
+        system_msg = next(m for m in messages if m["role"] == "system")
+        content = system_msg["content"]
+        # First entries kept; last entries dropped.
+        assert "Entry-0-" in content
+        assert "Entry-9-" not in content
+        assert len(content) <= 200
+
+    @pytest.mark.asyncio
+    async def test_trim_drops_profile_memories_after_dynamic(self):
+        """When dynamic memory is exhausted, profile memories are trimmed tail-first."""
+        from priest.profile.context_builder import build_messages
+        from priest.schema.request import OutputSpec
+
+        profile_entries = [f"Pmem-{i}-" + "y" * 50 for i in range(6)]
+        profile = Profile(
+            name="test", identity="", rules="", custom="",
+            memories=profile_entries, meta={},
+        )
+
+        messages = build_messages(
+            profile=profile, session=None, prompt="Hi.",
+            context=[], user_context=[], memory=[],
+            output_spec=OutputSpec(),
+            max_system_chars=200,
+        )
+        system_msg = next(m for m in messages if m["role"] == "system")
+        content = system_msg["content"]
+        assert "Pmem-0-" in content
+        assert "Pmem-5-" not in content
+        assert len(content) <= 200
+
+    @pytest.mark.asyncio
+    async def test_trim_drops_all_dynamic_before_any_profile(self):
+        """Priority order: dynamic memory is fully drained before profile memories are touched."""
+        from priest.profile.context_builder import build_messages
+        from priest.schema.request import OutputSpec
+
+        profile_entries = [f"Pmem-{i}-" + "y" * 20 for i in range(3)]
+        dynamic_entries = [f"Dyn-{i}-" + "x" * 20 for i in range(3)]
+        profile = Profile(
+            name="test", identity="", rules="", custom="",
+            memories=profile_entries, meta={},
+        )
+
+        # Budget large enough to keep all 3 profile memories, but not any dynamic entries.
+        messages = build_messages(
+            profile=profile, session=None, prompt="Hi.",
+            context=[], user_context=[], memory=dynamic_entries,
+            output_spec=OutputSpec(),
+            max_system_chars=120,
+        )
+        system_msg = next(m for m in messages if m["role"] == "system")
+        content = system_msg["content"]
+        # All profile memories preserved; all dynamic dropped.
+        for i in range(3):
+            assert f"Pmem-{i}-" in content
+            assert f"Dyn-{i}-" not in content
+
+    @pytest.mark.asyncio
+    async def test_no_trim_when_under_budget(self):
+        """max_system_chars is a no-op when the prompt already fits."""
+        from priest.profile.context_builder import build_messages
+        from priest.schema.request import OutputSpec
+
+        profile = Profile(name="test", identity="Hi.", rules="", custom="", memories=[], meta={})
+        messages = build_messages(
+            profile=profile, session=None, prompt="Hi.",
+            context=[], user_context=[], memory=["Short fact."],
+            output_spec=OutputSpec(),
+            max_system_chars=10_000,
+        )
+        system_msg = next(m for m in messages if m["role"] == "system")
+        assert "Short fact." in system_msg["content"]
+
+    @pytest.mark.asyncio
+    async def test_no_trim_when_budget_none(self):
+        """With max_system_chars=None, no trimming happens even for large inputs."""
+        from priest.profile.context_builder import build_messages
+        from priest.schema.request import OutputSpec
+
+        profile = Profile(name="test", identity="", rules="", custom="", memories=[], meta={})
+        big = [f"Entry-{i}-" + "x" * 500 for i in range(10)]
+
+        messages = build_messages(
+            profile=profile, session=None, prompt="Hi.",
+            context=[], user_context=[], memory=big,
+            output_spec=OutputSpec(),
+            max_system_chars=None,
+        )
+        system_msg = next(m for m in messages if m["role"] == "system")
+        assert len(system_msg["content"]) > 4000
+
+
+# ---------------------------------------------------------------------------
+# 4. Image input
+# ---------------------------------------------------------------------------
+
+class TestImageInput:
+    def test_image_url_becomes_content_block(self):
+        from priest.profile.context_builder import build_messages
+        from priest.schema.request import ImageInput, OutputSpec
+
+        profile = Profile(name="test", identity="", rules="", custom="", memories=[], meta={})
+        images = [ImageInput(url="https://example.com/photo.jpg")]
+
+        messages = build_messages(
+            profile=profile,
+            session=None,
+            prompt="What is this?",
+            context=[],
+            memory=[],
+            user_context=[],
+            output_spec=OutputSpec(),
+            images=images,
+        )
+
+        user_msg = next(m for m in messages if m["role"] == "user")
+        assert isinstance(user_msg["content"], list)
+        assert user_msg["content"][0] == {"type": "image_url", "image_url": {"url": "https://example.com/photo.jpg"}}
+        assert user_msg["content"][1] == {"type": "text", "text": "What is this?"}
+
+    def test_image_data_becomes_data_uri(self):
+        from priest.profile.context_builder import build_messages
+        from priest.schema.request import ImageInput, OutputSpec
+
+        profile = Profile(name="test", identity="", rules="", custom="", memories=[], meta={})
+        images = [ImageInput(data="abc123", media_type="image/png")]
+
+        messages = build_messages(
+            profile=profile, session=None, prompt="Describe.",
+            context=[], memory=[], user_context=[],
+            output_spec=OutputSpec(), images=images,
+        )
+
+        user_msg = next(m for m in messages if m["role"] == "user")
+        assert user_msg["content"][0]["image_url"]["url"] == "data:image/png;base64,abc123"
+
+    def test_image_path_reads_and_encodes(self, tmp_path):
+        import base64
+        from priest.profile.context_builder import build_messages
+        from priest.schema.request import ImageInput, OutputSpec
+
+        img_file = tmp_path / "test.jpg"
+        img_file.write_bytes(b"\xff\xd8\xff")  # minimal JPEG header
+
+        profile = Profile(name="test", identity="", rules="", custom="", memories=[], meta={})
+        messages = build_messages(
+            profile=profile, session=None, prompt="Look.",
+            context=[], memory=[], user_context=[],
+            output_spec=OutputSpec(),
+            images=[ImageInput(path=str(img_file))],
+        )
+
+        user_msg = next(m for m in messages if m["role"] == "user")
+        url = user_msg["content"][0]["image_url"]["url"]
+        expected_b64 = base64.b64encode(b"\xff\xd8\xff").decode()
+        assert url == f"data:image/jpeg;base64,{expected_b64}"
+
+    def test_image_path_not_found_raises_image_load_error(self, tmp_path):
+        from priest.errors import ImageLoadError
+        from priest.profile.context_builder import build_messages
+        from priest.schema.request import ImageInput, OutputSpec
+
+        profile = Profile(name="test", identity="", rules="", custom="", memories=[], meta={})
+        with pytest.raises(ImageLoadError):
+            build_messages(
+                profile=profile, session=None, prompt="Look.",
+                context=[], memory=[], user_context=[],
+                output_spec=OutputSpec(),
+                images=[ImageInput(path=str(tmp_path / "missing.jpg"))],
+            )
+
+    def test_no_images_user_content_is_string(self):
+        from priest.profile.context_builder import build_messages
+        from priest.schema.request import OutputSpec
+
+        profile = Profile(name="test", identity="", rules="", custom="", memories=[], meta={})
+        messages = build_messages(
+            profile=profile, session=None, prompt="Hello.",
+            context=[], memory=[], user_context=[],
+            output_spec=OutputSpec(),
+        )
+
+        user_msg = next(m for m in messages if m["role"] == "user")
+        assert isinstance(user_msg["content"], str)
+
+    def test_ollama_url_image_raises(self):
+        from priest.providers.ollama_provider import _translate_messages
+        from priest.errors import ProviderError
+
+        messages = [{"role": "user", "content": [
+            {"type": "image_url", "image_url": {"url": "https://example.com/img.jpg"}},
+            {"type": "text", "text": "What is this?"},
+        ]}]
+        with pytest.raises(ProviderError):
+            _translate_messages(messages)
+
+    def test_ollama_base64_image_translated(self):
+        from priest.providers.ollama_provider import _translate_messages
+
+        messages = [{"role": "user", "content": [
+            {"type": "image_url", "image_url": {"url": "data:image/jpeg;base64,abc123"}},
+            {"type": "text", "text": "Describe."},
+        ]}]
+        result = _translate_messages(messages)
+        assert result[0]["images"] == ["abc123"]
+        assert result[0]["content"] == "Describe."
+
+    def test_anthropic_base64_image_translated(self):
+        from priest.providers.anthropic_provider import _translate_messages
+
+        messages = [{"role": "user", "content": [
+            {"type": "image_url", "image_url": {"url": "data:image/png;base64,xyz"}},
+            {"type": "text", "text": "What is this?"},
+        ]}]
+        result = _translate_messages(messages)
+        blocks = result[0]["content"]
+        assert blocks[0] == {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": "xyz"}}
+        assert blocks[1] == {"type": "text", "text": "What is this?"}
+
+    def test_image_input_requires_exactly_one_source(self):
+        from priest.schema.request import ImageInput
+
+        with pytest.raises(Exception):
+            ImageInput()  # no source
+        with pytest.raises(Exception):
+            ImageInput(url="https://x.com/a.jpg", data="abc")  # two sources
 
 
 # ---------------------------------------------------------------------------
@@ -307,14 +646,14 @@ class TestAIConversation:
         assert len(response.text.strip().split()) == 1
 
     @pytest.mark.asyncio
-    async def test_ai_follows_system_context(self):
-        """AI uses app-injected system_context to answer a question."""
+    async def test_ai_follows_context(self):
+        """AI uses app-injected context to answer a question."""
         engine = self._engine()
 
         response = await engine.run(PriestRequest(
             config=self._cfg(),
             prompt="What is today's date? Reply with only the date.",
-            system_context=["Today's date is 2099-01-15."],
+            context=["Today's date is 2099-01-15."],
         ))
 
         assert response.ok, f"Error: {response.error}"

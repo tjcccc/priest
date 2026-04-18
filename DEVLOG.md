@@ -6,6 +6,32 @@
 
 ---
 
+## 2026-04-18 — v2.0.0 — context API redesign
+
+Breaking redesign of `PriestRequest` context fields plus library-level optimization for profile and memory.
+
+**Why:** `priests` (and future callers) need the library to do basic trimming and deduplication so the app layer doesn't have to. At the same time, the old three-way split (`system_context` / `memory_context` / `extra_context`) conflated "raw passthrough" with "library-managed" content and hid the user-turn-vs-system-prompt distinction behind a name that didn't suggest it.
+
+**New shape:**
+- `PriestRequest.context` — raw system-level strings, untouched by the library. Callers who want full control over the system prompt put everything here.
+- `PriestRequest.memory` — dynamic memory entries. The library dedupes (by stripped content, against self and profile.memories) and, when `config.max_system_chars` is set, trims from the tail.
+- `PriestRequest.user_context` — appended to the user turn (RAG chunks, tool outputs, search results). Follows the community convention of keeping ephemeral per-turn content with the user message rather than the persistent system prompt (OpenAI, Anthropic, LangChain, LlamaIndex all do this).
+
+**New config:**
+- `PriestConfig.max_system_chars: int | None = None`. Default `None` — no silent trimming, matching the principle of least astonishment followed by `tiktoken`, the OpenAI/Anthropic SDKs, and `transformers`. Callers opt in when they need safety; no single default is right across models (Claude 200k, Gemini 1M, Llama 128k, older 8k).
+
+**Trim strategy:** when the budget is exceeded, drop dynamic memory entries from the tail first, then profile memories from the tail. `context`, rules, identity, custom, and the format instruction are never trimmed (they're structural). If still over budget after all memory is gone, log a warning and continue.
+
+**Profile caching:** `FilesystemProfileLoader` now caches Profile instances per-loader keyed on (max mtime, file count) across `PROFILE.md`, `RULES.md`, `CUSTOM.md`, `profile.toml`, and `memories/*`. Any edit, add, or remove invalidates. Cold-reload cost drops to a single `stat()` loop per run.
+
+**Protocol spec bumped to 2.0.0.** `spec/schemas/request.schema.json`, `spec/schemas/config.schema.json`, `spec/behavior/context-assembly.md` updated. Memory dedup and trim algorithm documented as canonical behavior.
+
+**Tests:** 58 unit tests passing (was 46). New coverage: memory dedup (self + cross-source), tail-trim (memory and profile), trim priority order (dynamic fully drained before profile), budget no-op when None, profile cache hit, cache invalidation on mtime change, cache invalidation on new memory file.
+
+**priests CLI:** field renames only (`system_context` → `context`, `extra_context` → `user_context`). Memory block still goes via `context` because priests' memory formatting is domain-specific; the raw `memory` field is available when callers want library-level dedup/trim.
+
+---
+
 ## 2026-04-12 — v1.0.0 release
 
 First stable release. Version bumped to 1.0.0.

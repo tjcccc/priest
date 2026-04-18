@@ -28,17 +28,29 @@
       "default": null,
       "description": "Session reference. If null, no session is created or continued."
     },
-    "system_context": {
+    "context": {
       "type": "array",
       "items": { "type": "string" },
       "default": [],
-      "description": "App-layer strings injected at the top of the system prompt, above profile content. Use for runtime policy: current date, environment name, guardrails, etc. Empty strings are ignored."
+      "description": "Raw system-level context injected at the top of the system prompt, above profile content. The library passes these strings through untouched — it never dedupes or trims them. Use for app-layer policy (current date, environment, guardrails) or when the caller wants full control over the system prompt. Empty strings are ignored."
     },
-    "extra_context": {
+    "memory": {
       "type": "array",
       "items": { "type": "string" },
       "default": [],
-      "description": "Additional strings appended to the user turn after the prompt, joined with double newlines. Empty strings are ignored."
+      "description": "Dynamic memory entries. The library deduplicates entries by stripped content (against self and against profile.memories) and, when config.max_system_chars is set, trims from the tail to fit the budget. Rendered under a '## Memory' heading after profile.memories. Empty strings are ignored."
+    },
+    "user_context": {
+      "type": "array",
+      "items": { "type": "string" },
+      "default": [],
+      "description": "Strings appended to the user turn after the prompt, joined with '\\n\\n'. Use for per-turn ephemeral content (RAG chunks, tool outputs, search results) that belongs with the user's question rather than the persistent system prompt. Empty strings are ignored."
+    },
+    "images": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/ImageInput" },
+      "default": [],
+      "description": "Images attached to the user turn. See ImageInput for source options. Not persisted in sessions."
     },
     "output": {
       "$ref": "#/$defs/OutputSpec",
@@ -96,6 +108,18 @@
           "default": null,
           "description": "Injects a natural-language format instruction into the system prompt. Works with any provider. See behavior/context-assembly.md for the exact instruction strings."
         }
+      }
+    },
+    "ImageInput": {
+      "title": "ImageInput",
+      "description": "A single image attached to the user turn. Exactly one of `path`, `url`, or `data` must be set.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "path": { "type": ["string", "null"], "default": null, "description": "Local filesystem path. The library reads the file and base64-encodes it." },
+        "url": { "type": ["string", "null"], "default": null, "description": "HTTP/HTTPS URL. Not supported by the Ollama provider." },
+        "data": { "type": ["string", "null"], "default": null, "description": "Raw base64-encoded image bytes." },
+        "media_type": { "type": "string", "default": "image/jpeg", "description": "MIME type. Used when path or data is provided; ignored for url." }
       }
     }
   }

@@ -160,8 +160,8 @@ async def test_provider_format_and_prompt_format_are_independent():
 
 
 @pytest.mark.asyncio
-async def test_extra_context_included_in_user_message():
-    """Verify extra_context strings appear in the user message."""
+async def test_user_context_included_in_user_message():
+    """Verify user_context strings appear in the user message."""
     captured: list[dict] | None = None
     original_complete = MockAdapter.complete
 
@@ -171,7 +171,7 @@ async def test_extra_context_included_in_user_message():
         return await original_complete(self, messages, config, output_spec)
 
     engine = _make_engine()
-    request = _make_request(extra_context=["some extra info"])
+    request = _make_request(user_context=["some extra info"])
 
     with patch.object(MockAdapter, "complete", capturing_complete):
         await engine.run(request)
@@ -182,8 +182,8 @@ async def test_extra_context_included_in_user_message():
 
 
 @pytest.mark.asyncio
-async def test_system_context_appears_first_in_system_message():
-    """Verify system_context is injected at the top of the system prompt."""
+async def test_context_appears_first_in_system_message():
+    """Verify `context` is injected at the top of the system prompt."""
     captured: list[dict] | None = None
     original_complete = MockAdapter.complete
 
@@ -193,7 +193,7 @@ async def test_system_context_appears_first_in_system_message():
         return await original_complete(self, messages, config, output_spec)
 
     engine = _make_engine()
-    request = _make_request(system_context=["Today is 2026-04-01.", "App: priests"])
+    request = _make_request(context=["Today is 2026-04-01.", "App: priests"])
 
     with patch.object(MockAdapter, "complete", capturing_complete):
         await engine.run(request)
@@ -203,3 +203,54 @@ async def test_system_context_appears_first_in_system_message():
     content = system_msg["content"]
     assert "Today is 2026-04-01." in content
     assert content.index("Today is 2026-04-01.") < content.index("Do not make things up")
+
+
+@pytest.mark.asyncio
+async def test_memory_field_injected_as_dynamic_section():
+    """Verify the `memory` field produces a ## Memory section after profile memories."""
+    captured: list[dict] | None = None
+    original_complete = MockAdapter.complete
+
+    async def capturing_complete(self, messages, config, output_spec):
+        nonlocal captured
+        captured = messages
+        return await original_complete(self, messages, config, output_spec)
+
+    engine = _make_engine()
+    request = _make_request(memory=["Dynamic: user is on mobile."])
+
+    with patch.object(MockAdapter, "complete", capturing_complete):
+        await engine.run(request)
+
+    assert captured is not None
+    system_msg = next(m for m in captured if m["role"] == "system")
+    content = system_msg["content"]
+    assert "## Memory" in content
+    assert "Dynamic: user is on mobile." in content
+
+
+@pytest.mark.asyncio
+async def test_max_system_chars_trims_memory():
+    """Verify max_system_chars on PriestConfig trims dynamic memory tail-first."""
+    captured: list[dict] | None = None
+    original_complete = MockAdapter.complete
+
+    async def capturing_complete(self, messages, config, output_spec):
+        nonlocal captured
+        captured = messages
+        return await original_complete(self, messages, config, output_spec)
+
+    engine = _make_engine()
+    cfg = PriestConfig(provider="mock", model="test-model", max_system_chars=400)
+    entries = [f"Entry-{i}-" + "x" * 100 for i in range(10)]
+    request = _make_request(config=cfg, memory=entries)
+
+    with patch.object(MockAdapter, "complete", capturing_complete):
+        await engine.run(request)
+
+    assert captured is not None
+    system_msg = next(m for m in captured if m["role"] == "system")
+    assert len(system_msg["content"]) <= 400
+    # At least the first entry survives, last entry does not.
+    assert "Entry-0-" in system_msg["content"]
+    assert "Entry-9-" not in system_msg["content"]

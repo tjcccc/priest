@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "priest-core"
-version = "1.0.0"
+version = "2.0.0"
 description = "Pure core library for AI orchestration — transport-agnostic, host-agnostic, async-first"
 readme = "README.md"
 requires-python = ">=3.11"

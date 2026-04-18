@@ -41,7 +41,7 @@ The spec uses [Semantic Versioning](https://semver.org/).
 - **Minor** (`1.x.0`): new optional fields, new provider support, backward-compatible additions
 - **Major** (`x.0.0`): breaking changes to schemas, algorithm, or string constants
 
-Current spec version: **1.0.0**
+Current spec version: **2.0.0**
 
 Each SDK implementation declares which spec version it targets. See `CHANGELOG.md` for history.
 
