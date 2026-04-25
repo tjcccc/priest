@@ -98,22 +98,30 @@ async with SqliteSessionStore(db_path=Path("sessions.db")) as store:
 
 `priest` never parses the response. `response.text` is always the raw string returned by the model — format handling is the app layer's responsibility.
 
-Two independent mechanisms are available to hint the model's output format:
+Three independent mechanisms are available to hint the model's output format:
 
 ```python
 from priest.schema.request import OutputSpec
 
-# Activate provider-native JSON mode (e.g. Ollama's format field)
+# Activate provider-native JSON mode (e.g. Ollama's format field, OpenAI's json_object mode)
 output=OutputSpec(provider_format="json")
 
-# Inject a natural-language instruction into the system prompt
+# Inject a natural-language instruction into the system prompt (works with any provider)
 output=OutputSpec(prompt_format="json")   # also: "xml", "code"
 
-# Both together for maximum compliance
-output=OutputSpec(provider_format="json", prompt_format="json")
+# JSON Schema structured output — preferred for strict schema compliance
+output=OutputSpec(
+    json_schema={
+        "type": "object",
+        "properties": {"name": {"type": "string"}, "age": {"type": "integer"}},
+        "required": ["name", "age"],
+    },
+    json_schema_name="person",    # optional, defaults to "response"
+    json_schema_strict=False,     # True requires additionalProperties:false on all objects
+)
 ```
 
-Either, both, or neither can be set independently.
+`json_schema` wires to provider-native structured output when available (OpenAI `json_schema` mode, Ollama `format` field). For Anthropic, the schema is injected into the system message. `json_schema` takes precedence over `provider_format` when both are set. Either, both, or none of the three mechanisms can be set independently.
 
 ## System context
 

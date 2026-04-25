@@ -2,6 +2,18 @@
 
 All notable changes to `priest` are documented here.
 
+## [2.2.0] — 2026-04-25
+
+### Added
+- `OutputSpec.json_schema: dict[str, Any] | None` — JSON Schema for structured output. When set, takes precedence over `provider_format="json"`.
+- `OutputSpec.json_schema_name: str` (default `"response"`) — schema name passed to OpenAI's `json_schema.name` field.
+- `OutputSpec.json_schema_strict: bool` (default `False`) — maps to OpenAI's `json_schema.strict`. Enable only when the schema fully satisfies strict mode requirements (`required` exhaustive, `additionalProperties: false`).
+- **OpenAI-compat:** `response_format: {"type": "json_schema", ...}` wired in both `complete` and `stream`.
+- **Ollama (v0.5+):** `format: <schema_dict>` (schema dict passed directly) wired in both `complete` and `stream`.
+- **Anthropic:** adapter-level system message injection with the schema description, wired in both `complete` and `stream`. Anthropic has no native JSON Schema API; the injected block uses XML tags (`<schema>`) for clarity.
+
+---
+
 ## [2.0.0] — 2026-04-18
 
 ### Breaking

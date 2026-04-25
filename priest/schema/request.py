@@ -68,6 +68,18 @@ class OutputSpec(BaseModel):
     # parsing is the app layer's responsibility.
     prompt_format: Literal["json", "xml", "code"] | None = None
 
+    # JSON Schema for structured output.
+    # OpenAI-compat: maps to response_format={"type": "json_schema", ...}.
+    # Ollama (v0.5+): maps to format=<schema_dict>.
+    # Anthropic: schema description is injected into the system message (no native support).
+    # When set, takes precedence over provider_format for the schema-capable path.
+    # If prompt_format is also set, both instructions will appear — prefer using one or the other.
+    # json_schema_strict=True requires every property listed in required and
+    # additionalProperties=False; most user schemas won't satisfy this out of the box.
+    json_schema: dict[str, Any] | None = None
+    json_schema_name: str = "response"
+    json_schema_strict: bool = False
+
 
 class PriestRequest(BaseModel):
     config: PriestConfig

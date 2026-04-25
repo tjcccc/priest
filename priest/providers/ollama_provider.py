@@ -35,7 +35,9 @@ class OllamaProvider(ProviderAdapter):
         if config.max_output_tokens is not None:
             payload.setdefault("options", {})["num_predict"] = config.max_output_tokens
 
-        if output_spec.provider_format == "json":
+        if output_spec.json_schema is not None:
+            payload["format"] = output_spec.json_schema
+        elif output_spec.provider_format == "json":
             payload["format"] = "json"
 
         # Merge provider-specific options (e.g. {"think": False} for Qwen3)
@@ -86,7 +88,9 @@ class OllamaProvider(ProviderAdapter):
         if config.max_output_tokens is not None:
             payload.setdefault("options", {})["num_predict"] = config.max_output_tokens
 
-        if output_spec.provider_format == "json":
+        if output_spec.json_schema is not None:
+            payload["format"] = output_spec.json_schema
+        elif output_spec.provider_format == "json":
             payload["format"] = "json"
 
         payload.update(config.provider_options)

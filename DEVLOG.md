@@ -6,6 +6,18 @@
 
 ---
 
+## 2026-04-25 — v2.2.0 — structured output (json_schema)
+
+Added `json_schema`, `json_schema_name`, and `json_schema_strict` to `OutputSpec` for per-provider JSON Schema wiring.
+
+- **OpenAI-compat:** `response_format: {"type": "json_schema", "json_schema": {name, schema, strict}}`. Takes precedence over `provider_format="json"` when set.
+- **Ollama (v0.5+):** `format: <schema_dict>` passed directly. Takes precedence over `provider_format="json"`.
+- **Anthropic:** no native JSON Schema support — the adapter injects a structured instruction block into the assembled system message for both `complete` and `stream`.
+- `json_schema_strict` defaults to `False`; strict mode requires every property in `required` and `additionalProperties: false`, which most user schemas won't satisfy.
+- 13 tests: `OutputSpec` defaults, round-trip, all three adapter `complete` paths, all three adapter `stream` paths, and `_schema_instruction` content.
+
+---
+
 ## 2026-04-18 — v2.0.0 — context API redesign
 
 Breaking redesign of `PriestRequest` context fields plus library-level optimization for profile and memory.

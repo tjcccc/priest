@@ -47,7 +47,16 @@ class OpenAICompatProvider(ProviderAdapter):
         if config.max_output_tokens is not None:
             kwargs["max_tokens"] = config.max_output_tokens
 
-        if output_spec.provider_format == "json":
+        if output_spec.json_schema is not None:
+            kwargs["response_format"] = {
+                "type": "json_schema",
+                "json_schema": {
+                    "name": output_spec.json_schema_name,
+                    "schema": output_spec.json_schema,
+                    "strict": output_spec.json_schema_strict,
+                },
+            }
+        elif output_spec.provider_format == "json":
             kwargs["response_format"] = {"type": "json_object"}
 
         if config.provider_options:
@@ -98,7 +107,16 @@ class OpenAICompatProvider(ProviderAdapter):
         if config.max_output_tokens is not None:
             kwargs["max_tokens"] = config.max_output_tokens
 
-        if output_spec.provider_format == "json":
+        if output_spec.json_schema is not None:
+            kwargs["response_format"] = {
+                "type": "json_schema",
+                "json_schema": {
+                    "name": output_spec.json_schema_name,
+                    "schema": output_spec.json_schema,
+                    "strict": output_spec.json_schema_strict,
+                },
+            }
+        elif output_spec.provider_format == "json":
             kwargs["response_format"] = {"type": "json_object"}
 
         if config.provider_options:

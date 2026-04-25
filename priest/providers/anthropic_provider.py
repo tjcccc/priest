@@ -37,6 +37,8 @@ class AnthropicProvider(ProviderAdapter):
         output_spec: OutputSpec,
     ) -> AdapterResult:
         system_parts = [m["content"] for m in messages if m["role"] == "system"]
+        if output_spec.json_schema is not None:
+            system_parts.append(_schema_instruction(output_spec.json_schema))
         turns = _translate_messages([m for m in messages if m["role"] != "system"])
 
         payload: dict = {
@@ -44,7 +46,6 @@ class AnthropicProvider(ProviderAdapter):
             "messages": turns,
             "max_tokens": config.max_output_tokens or _DEFAULT_MAX_TOKENS,
         }
-
 
         if system_parts:
             payload["system"] = "\n\n".join(system_parts)
@@ -96,6 +97,8 @@ class AnthropicProvider(ProviderAdapter):
         output_spec: OutputSpec,
     ) -> AsyncGenerator[str, None]:
         system_parts = [m["content"] for m in messages if m["role"] == "system"]
+        if output_spec.json_schema is not None:
+            system_parts.append(_schema_instruction(output_spec.json_schema))
         turns = _translate_messages([m for m in messages if m["role"] != "system"])
 
         payload: dict = {
@@ -170,6 +173,14 @@ class AnthropicProvider(ProviderAdapter):
                 yield item
         finally:
             thread.join(timeout=5)
+
+
+def _schema_instruction(schema: dict) -> str:
+    return (
+        "Respond with a valid JSON object that conforms to the following JSON Schema:\n\n"
+        f"<schema>\n{json.dumps(schema, indent=2)}\n</schema>\n\n"
+        "Return only the JSON object — no explanation, no markdown fences."
+    )
 
 
 def _translate_messages(messages: list[dict]) -> list[dict]:
