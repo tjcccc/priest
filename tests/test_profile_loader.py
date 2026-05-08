@@ -20,6 +20,14 @@ def test_load_default_profile():
     assert "test memory" in profile.memories[0]
 
 
+def test_load_profile_can_skip_memories():
+    loader = FilesystemProfileLoader(FIXTURES, include_memories=False)
+    profile = loader.load("default")
+
+    assert profile.name == "default"
+    assert profile.memories == []
+
+
 def test_load_minimal_profile():
     loader = FilesystemProfileLoader(FIXTURES)
     profile = loader.load("minimal")
@@ -126,3 +134,20 @@ def test_loader_invalidates_on_memory_file_added(tmp_path):
     p2 = loader.load("addmem")
     assert p2 is not p1
     assert len(p2.memories) == 2
+
+
+def test_loader_does_not_track_memory_files_when_skipped(tmp_path):
+    """Adding a memory file does not invalidate cache when include_memories=False."""
+    profile_dir = tmp_path / "skipmem"
+    (profile_dir / "memories").mkdir(parents=True)
+    (profile_dir / "PROFILE.md").write_text("Ident.")
+    (profile_dir / "memories" / "01.md").write_text("One.")
+
+    loader = FilesystemProfileLoader(tmp_path, include_memories=False)
+    p1 = loader.load("skipmem")
+    assert p1.memories == []
+
+    (profile_dir / "memories" / "02.md").write_text("Two.")
+    p2 = loader.load("skipmem")
+    assert p2 is p1
+    assert p2.memories == []

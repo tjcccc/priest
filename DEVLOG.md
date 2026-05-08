@@ -6,6 +6,14 @@
 
 ---
 
+## 2026-05-08 — v2.3.0 — optional profile memory loading
+
+- Added `FilesystemProfileLoader(..., include_memories=False)` so host applications can load profile identity/rules/custom docs without also injecting `memories/`
+- Cache invalidation now respects the opt-out: profile memory files are only tracked when memory loading is enabled
+- This keeps `priest` generic while allowing apps such as `priests` to own product-level memory semantics and pass selected memory through `PriestRequest.memory`
+
+---
+
 ## 2026-04-25 — v2.2.0 — structured output (json_schema)
 
 Added `json_schema`, `json_schema_name`, and `json_schema_strict` to `OutputSpec` for per-provider JSON Schema wiring.

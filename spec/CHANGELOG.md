@@ -1,5 +1,15 @@
 # Spec Changelog
 
+## 2.3.0 — 2026-05-08
+
+### Added
+- `FilesystemProfileLoader(..., include_memories=False)` lets host applications disable automatic loading of profile `memories/*.md` / `*.txt` files while still using filesystem profiles.
+
+### Reference implementation
+- Python `priest-core` v2.3.0
+
+---
+
 ## 2.0.0 — 2026-04-18
 
 **Breaking:** the `PriestRequest` context fields are collapsed and renamed. This is a breaking change to the request schema and the context-assembly algorithm.

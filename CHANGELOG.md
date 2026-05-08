@@ -2,6 +2,16 @@
 
 All notable changes to `priest` are documented here.
 
+## [2.3.0] — 2026-05-08
+
+### Added
+- `FilesystemProfileLoader(..., include_memories=False)` lets callers opt out of automatic `memories/` loading while preserving profile identity, rules, custom context, and metadata loading.
+
+### Changed
+- Profile cache signatures only track `memories/` files when profile memory loading is enabled.
+
+---
+
 ## [2.2.0] — 2026-04-25
 
 ### Added

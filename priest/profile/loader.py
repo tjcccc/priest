@@ -27,13 +27,16 @@ class FilesystemProfileLoader:
     the built-in default profile is returned for name='default'. Any other
     missing profile raises ProfileNotFoundError.
 
+    When include_memories is false, files under memories/ are ignored. This lets
+    host applications own memory assembly while still using filesystem profiles.
+
     Results are cached per loader instance keyed on (max mtime, file count) of
-    PROFILE.md, RULES.md, CUSTOM.md, profile.toml, and every file under memories/.
-    Any edit, add, or remove invalidates the cache on the next load.
+    tracked files. Any edit, add, or remove invalidates the cache on the next load.
     """
 
-    def __init__(self, profiles_root: Path | None = None) -> None:
+    def __init__(self, profiles_root: Path | None = None, *, include_memories: bool = True) -> None:
         self._root = profiles_root
+        self._include_memories = include_memories
         self._cache: dict[str, tuple[_CacheKey, Profile]] = {}
 
     def load(self, name: str) -> Profile:
@@ -49,7 +52,7 @@ class FilesystemProfileLoader:
         raise ProfileNotFoundError(name)
 
     def _load_from_dir_cached(self, name: str, profile_dir: Path) -> Profile:
-        tracked = self._tracked_files(profile_dir)
+        tracked = self._tracked_files(profile_dir, include_memories=self._include_memories)
         cache_key = self._cache_key(tracked)
 
         cached = self._cache.get(name)
@@ -61,12 +64,14 @@ class FilesystemProfileLoader:
         return profile
 
     @staticmethod
-    def _tracked_files(profile_dir: Path) -> list[Path]:
+    def _tracked_files(profile_dir: Path, *, include_memories: bool = True) -> list[Path]:
         files: list[Path] = []
         for fname in ("PROFILE.md", "RULES.md", "CUSTOM.md", "profile.toml"):
             p = profile_dir / fname
             if p.exists():
                 files.append(p)
+        if not include_memories:
+            return files
         memories_dir = profile_dir / "memories"
         if memories_dir.is_dir():
             files.extend(
@@ -101,7 +106,7 @@ class FilesystemProfileLoader:
 
         memories: list[str] = []
         memories_dir = profile_dir / "memories"
-        if memories_dir.is_dir():
+        if self._include_memories and memories_dir.is_dir():
             memory_files = sorted(
                 f for f in memories_dir.iterdir()
                 if f.suffix in {".md", ".txt"} and f.is_file()

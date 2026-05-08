@@ -22,6 +22,8 @@ Reference implementation: `priest/profile/loader.py`, `priest/profile/default_pr
 
 Only `.md` and `.txt` files in the `memories/` directory are loaded. Other file types are ignored. Files are loaded in ascending lexicographic order by filename (e.g. `01-facts.md` before `02-context.md`).
 
+Host applications may disable this filesystem memory loading with an `include_memories=false` loader option. This is intended for applications that assemble memory themselves and pass it through the request `memory` field.
+
 ---
 
 ## Loading algorithm
@@ -48,7 +50,7 @@ rules    = read(dir / "RULES.md")    if exists else ""
 custom   = read(dir / "CUSTOM.md")   if exists else ""
 
 memories = []
-if (dir / "memories") is a directory:
+if include_memories is true AND (dir / "memories") is a directory:
     files = [f for f in listdir(dir / "memories") if f ends with .md or .txt]
     sort files by filename ascending (lexicographic)
     for each file:
