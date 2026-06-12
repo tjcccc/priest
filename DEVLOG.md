@@ -6,6 +6,19 @@
 
 ---
 
+## 2026-06-12 — v2.4.0 — tool calling, structured streaming (spec 2.4.0 sync)
+
+Syncs the spec 2.4.0 features first implemented in priest-typescript.
+
+- **Tool calling (caller executes):** `PriestRequest.tools` / `tool_choice` / `tool_exchange`, `PriestResponse.tool_calls`, `finished_reason: "tool_calls"`. Wire mappings for all three providers (OpenAI tools/tool_calls with JSON-string arguments, Anthropic tool_use/tool_result with merged user messages, Ollama tools with synthesized `call_N` ids and `tool_name` results). Tool exchange turns are never persisted in sessions — schema interop with pre-2.4 SDKs preserved.
+- **`run_with_tools()` loop helper** (`priest/tool_loop.py`): generic call → execute → re-call loop with caller executor, optional `on_tool_call` approval hook, iteration cap, and exchange trace.
+- **`PriestEngine.stream_events()`:** structured streaming (`text_delta`, `tool_call_start/delta/end`, `usage`, `done` with full `PriestResponse`); adapters without native event streaming are wrapped; `stream()` reimplemented as a filter over it.
+- **Cancellation:** Python maps the spec's cancellation concept to native asyncio task cancellation; `ErrorCode.REQUEST_ABORTED` added for parity.
+- `AdapterCallOptions` / `AdapterStreamEvent` added to the adapter base; `AdapterResult.tool_calls` added.
+- Tests: 86 (9 new in `tests/test_tool_calling.py`).
+
+---
+
 ## 2026-05-08 — v2.3.0 — optional profile memory loading
 
 - Added `FilesystemProfileLoader(..., include_memories=False)` so host applications can load profile identity/rules/custom docs without also injecting `memories/`

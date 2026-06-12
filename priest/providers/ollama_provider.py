@@ -6,8 +6,8 @@ from typing import AsyncGenerator
 import httpx
 
 from priest.errors import ProviderError, ProviderTimeoutError
-from priest.providers.base import AdapterResult, ProviderAdapter
-from priest.schema.request import OutputSpec, PriestConfig
+from priest.providers.base import AdapterCallOptions, AdapterResult, AdapterStreamEvent, ProviderAdapter
+from priest.schema.request import OutputSpec, PriestConfig, ToolCall
 
 _DEFAULT_BASE_URL = "http://localhost:11434"
 
@@ -25,6 +25,7 @@ class OllamaProvider(ProviderAdapter):
         messages: list[dict],
         config: PriestConfig,
         output_spec: OutputSpec,
+        options: AdapterCallOptions | None = None,
     ) -> AdapterResult:
         payload: dict = {
             "model": config.model,
@@ -39,6 +40,8 @@ class OllamaProvider(ProviderAdapter):
             payload["format"] = output_spec.json_schema
         elif output_spec.provider_format == "json":
             payload["format"] = "json"
+
+        _apply_tools(payload, options)
 
         # Merge provider-specific options (e.g. {"think": False} for Qwen3)
         payload.update(config.provider_options)
@@ -63,14 +66,16 @@ class OllamaProvider(ProviderAdapter):
         data = response.json()
         message = data.get("message", {})
         text = message.get("content")
+        tool_calls = _parse_tool_calls(message.get("tool_calls"))
 
         # Ollama returns token counts in the top-level response
         return AdapterResult(
             text=text,
             raw=data,
-            finish_reason=_map_finish_reason(data.get("done_reason")),
+            finish_reason="tool_calls" if tool_calls else _map_finish_reason(data.get("done_reason")),
             input_tokens=data.get("prompt_eval_count"),
             output_tokens=data.get("eval_count"),
+            tool_calls=tool_calls or None,
         )
 
     async def stream(
@@ -78,7 +83,19 @@ class OllamaProvider(ProviderAdapter):
         messages: list[dict],
         config: PriestConfig,
         output_spec: OutputSpec,
+        options: AdapterCallOptions | None = None,
     ) -> AsyncGenerator[str, None]:
+        async for event in self.stream_events(messages, config, output_spec, options):
+            if event.type == "text_delta" and event.text:
+                yield event.text
+
+    async def stream_events(
+        self,
+        messages: list[dict],
+        config: PriestConfig,
+        output_spec: OutputSpec,
+        options: AdapterCallOptions | None = None,
+    ) -> AsyncGenerator[AdapterStreamEvent, None]:
         payload: dict = {
             "model": config.model,
             "messages": _translate_messages(messages),
@@ -93,9 +110,11 @@ class OllamaProvider(ProviderAdapter):
         elif output_spec.provider_format == "json":
             payload["format"] = "json"
 
+        _apply_tools(payload, options)
         payload.update(config.provider_options)
 
         timeout = config.timeout_seconds or 60.0
+        tool_call_index = 0
 
         try:
             async with httpx.AsyncClient() as client:
@@ -109,11 +128,34 @@ class OllamaProvider(ProviderAdapter):
                     async for line in response.aiter_lines():
                         if not line:
                             continue
-                        data = json.loads(line)
-                        content = data.get("message", {}).get("content", "")
+                        try:
+                            data = json.loads(line)
+                        except json.JSONDecodeError:
+                            continue
+                        message = data.get("message", {})
+                        content = message.get("content", "")
                         if content:
-                            yield content
+                            yield AdapterStreamEvent(type="text_delta", text=content)
+                        # Ollama delivers each tool call whole in one chunk.
+                        for call in _parse_tool_calls(message.get("tool_calls"), start_index=tool_call_index):
+                            yield AdapterStreamEvent(
+                                type="tool_call_start", index=tool_call_index, id=call.id, name=call.name
+                            )
+                            yield AdapterStreamEvent(
+                                type="tool_call_end", index=tool_call_index, tool_call=call
+                            )
+                            tool_call_index += 1
                         if data.get("done"):
+                            if data.get("prompt_eval_count") is not None or data.get("eval_count") is not None:
+                                yield AdapterStreamEvent(
+                                    type="usage",
+                                    input_tokens=data.get("prompt_eval_count"),
+                                    output_tokens=data.get("eval_count"),
+                                )
+                            yield AdapterStreamEvent(
+                                type="finish",
+                                finish_reason="tool_calls" if tool_call_index > 0 else _map_finish_reason(data.get("done_reason")),
+                            )
                             break
         except httpx.TimeoutException:
             raise ProviderTimeoutError("ollama", timeout)
@@ -132,7 +174,20 @@ def _translate_messages(messages: list[dict]) -> list[dict]:
     result = []
     for msg in messages:
         content = msg.get("content")
-        if msg["role"] == "user" and isinstance(content, list):
+        if msg["role"] == "tool":
+            # Ollama correlates tool results by tool_name, not call id.
+            result.append({"role": "tool", "content": content, "tool_name": msg.get("name")})
+        elif msg["role"] == "assistant" and msg.get("tool_calls"):
+            # Synthesized call ids are dropped on the wire.
+            result.append({
+                "role": "assistant",
+                "content": content or "",
+                "tool_calls": [
+                    {"function": {"name": call["name"], "arguments": call.get("arguments", {})}}
+                    for call in msg["tool_calls"]
+                ],
+            })
+        elif msg["role"] == "user" and isinstance(content, list):
             text_parts: list[str] = []
             image_b64s: list[str] = []
             for block in content:
@@ -166,3 +221,40 @@ def _map_finish_reason(reason: str | None) -> str | None:
         "load": "stop",
     }
     return mapping.get(reason, "unknown")
+
+
+def _apply_tools(payload: dict, options: AdapterCallOptions | None) -> None:
+    """Ollama accepts OpenAI-shaped tools; it has no tool_choice parameter."""
+    if options is None or not options.tools:
+        return
+    payload["tools"] = [
+        {
+            "type": "function",
+            "function": {
+                "name": tool.name,
+                "description": tool.description,
+                "parameters": tool.parameters or {},
+            },
+        }
+        for tool in options.tools
+    ]
+
+
+def _parse_tool_calls(raw: list | None, start_index: int = 0) -> list[ToolCall]:
+    """Parse Ollama wire tool calls, synthesizing ids 'call_N' in order.
+
+    Ollama returns arguments as parsed objects already.
+    """
+    calls: list[ToolCall] = []
+    for item in raw or []:
+        function = item.get("function") or {}
+        name = function.get("name")
+        if not name:
+            continue
+        arguments = function.get("arguments")
+        calls.append(ToolCall(
+            id=f"call_{start_index + len(calls)}",
+            name=name,
+            arguments=arguments if isinstance(arguments, dict) else {},
+        ))
+    return calls

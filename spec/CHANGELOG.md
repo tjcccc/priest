@@ -1,5 +1,22 @@
 # Spec Changelog
 
+## 2.4.0 — 2026-06-12
+
+Native tool calling, structured streaming, cancellation, and image parity. All changes are additive — 2.3.0 requests remain valid and sessions remain fully interoperable.
+
+### Added
+- **Tool calling** (`behavior/tool-calling.md`): `PriestRequest.tools` / `tool_choice` / `tool_exchange`; `PriestResponse.tool_calls`; `finished_reason: "tool_calls"`; `ToolDefinition` / `ToolCall` / `ToolExchangeTurn` schema blocks. The caller executes tools; the library transports. Tool exchange turns are appended after the user message and are **never persisted in sessions** (no schema change — `turns` still stores only user/assistant roles).
+- **`stream_events()`** (`behavior/streaming.md`): typed event stream (`text_delta`, `tool_call_start/delta/end`, `usage`, `done` with full `PriestResponse`); engine-level fallback wraps plain adapter `stream()`; error semantics match `run()`.
+- **Cancellation** (`behavior/streaming.md`): optional caller cancellation signal on `run()`/`stream()`/`stream_events()`; new `REQUEST_ABORTED` error code, distinct from `PROVIDER_TIMEOUT`.
+- **`run_with_tools` convenience loop** (`behavior/tool-calling.md`): recommended caller-executes loop with approval hook, iteration cap, and exchange trace.
+- Per-provider tool and image wire mappings in `behavior/providers.md`, including Ollama call-id synthesis (`call_N`) and Anthropic tool_result/user-message merging.
+- `IMAGE_LOAD_ERROR` added to the error table (existed in the Python reference; previously missing from the spec).
+
+### Reference implementation
+- TypeScript `@priest-ai/core` v2.4.0; Python `priest-core` v2.4.0
+
+---
+
 ## 2.3.0 — 2026-05-08
 
 ### Added

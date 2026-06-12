@@ -6,7 +6,7 @@ from pathlib import Path
 
 from priest.errors import ImageLoadError
 from priest.profile.model import Profile
-from priest.schema.request import ImageInput, OutputSpec
+from priest.schema.request import ImageInput, OutputSpec, ToolExchangeTurn
 from priest.session.model import Session
 
 logger = logging.getLogger(__name__)
@@ -28,6 +28,7 @@ def build_messages(
     output_spec: OutputSpec,
     images: list[ImageInput] | None = None,
     max_system_chars: int | None = None,
+    tool_exchange: list[ToolExchangeTurn] | None = None,
 ) -> list[dict]:
     """Assemble the ordered message list for a provider.
 
@@ -101,6 +102,23 @@ def build_messages(
         messages.append({"role": "user", "content": content_blocks})
     else:
         messages.append({"role": "user", "content": user_text})
+
+    # Tool loop history for the current turn (spec 2.4.0). Appended after the
+    # user message, never persisted in sessions.
+    for turn in tool_exchange or []:
+        if turn.kind == "assistant":
+            messages.append({
+                "role": "assistant",
+                "content": turn.text or "",
+                "tool_calls": [call.model_dump() for call in turn.tool_calls],
+            })
+        else:
+            messages.append({
+                "role": "tool",
+                "content": turn.content,
+                "tool_call_id": turn.tool_call_id,
+                "name": turn.name,
+            })
 
     return messages
 

@@ -4,6 +4,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
+from priest.schema.request import ToolCall
+
 
 class UsageInfo(BaseModel):
     input_tokens: int | None = None
@@ -17,7 +19,7 @@ class ExecutionInfo(BaseModel):
     model: str
     latency_ms: int | None = None
     profile: str
-    finished_reason: Literal["stop", "length", "error", "unknown"] | None = None
+    finished_reason: Literal["stop", "length", "tool_calls", "error", "unknown"] | None = None
 
 
 class SessionInfo(BaseModel):
@@ -36,6 +38,10 @@ class PriestResponse(BaseModel):
     # Raw text returned by the provider. Always populated on success.
     # Parsing (JSON, XML, etc.) is the app layer's responsibility.
     text: str | None = None
+    # Tool calls requested by the model. Non-empty exactly when
+    # execution.finished_reason is "tool_calls". The caller executes them and
+    # re-runs with the results appended to request.tool_exchange.
+    tool_calls: list[ToolCall] | None = None
     execution: ExecutionInfo
     usage: UsageInfo | None = None
     session: SessionInfo | None = None

@@ -81,6 +81,60 @@ class OutputSpec(BaseModel):
     json_schema_strict: bool = False
 
 
+class ToolDefinition(BaseModel):
+    """A tool the model may call.
+
+    The library transports tool definitions and calls; it never executes
+    tools — execution is the caller's responsibility. See spec
+    behavior/tool-calling.md.
+    """
+    name: str
+    description: str = ""
+    # JSON Schema object describing the tool's parameters.
+    parameters: dict[str, Any] | None = None
+
+
+class NamedToolChoice(BaseModel):
+    """Forces the model to call one specific tool."""
+    name: str
+
+
+# 'auto' lets the model decide, 'none' disables calls, 'required' forces a call.
+ToolChoice = Literal["auto", "none", "required"] | NamedToolChoice
+
+
+class ToolCall(BaseModel):
+    """A single tool call requested by the model.
+
+    Providers that do not assign call ids (Ollama) get synthesized ids
+    'call_0', 'call_1', ... in response order.
+    """
+    id: str
+    name: str
+    # Parsed arguments. {} when the provider produced unparseable JSON.
+    arguments: dict[str, Any] = Field(default_factory=dict)
+
+
+class AssistantToolTurn(BaseModel):
+    """Assistant turn carrying tool calls, replayed in the tool exchange."""
+    kind: Literal["assistant"] = "assistant"
+    text: str | None = None
+    tool_calls: list[ToolCall]
+
+
+class ToolResultTurn(BaseModel):
+    """Result of one executed tool call, replayed in the tool exchange."""
+    kind: Literal["tool_result"] = "tool_result"
+    tool_call_id: str
+    name: str
+    content: str
+    is_error: bool | None = None
+
+
+# Turn-local tool loop history. Never persisted in sessions.
+ToolExchangeTurn = AssistantToolTurn | ToolResultTurn
+
+
 class PriestRequest(BaseModel):
     config: PriestConfig
     profile: str = "default"
@@ -105,3 +159,11 @@ class PriestRequest(BaseModel):
     # Arbitrary caller metadata — passed through to PriestResponse unchanged.
     metadata: dict[str, Any] = Field(default_factory=dict)
     output: OutputSpec = Field(default_factory=OutputSpec)
+    # Tools the model may call. The caller executes them; the library transports.
+    tools: list[ToolDefinition] = Field(default_factory=list)
+    # Tool selection behavior. Only meaningful when tools is non-empty.
+    tool_choice: ToolChoice | None = None
+    # Tool loop history for the CURRENT user turn, appended after the user
+    # message. Never persisted in sessions — replayed by the caller on each
+    # loop iteration. See spec behavior/tool-calling.md.
+    tool_exchange: list[ToolExchangeTurn] = Field(default_factory=list)

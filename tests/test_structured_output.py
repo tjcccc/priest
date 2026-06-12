@@ -262,12 +262,15 @@ async def test_openai_json_schema_stream():
 
     class FakeDelta:
         content = "{"
+        tool_calls = None
 
     class FakeChoice:
         delta = FakeDelta()
+        finish_reason = None
 
     class FakeChunk:
         choices = [FakeChoice()]
+        usage = None
 
     def make_openai_client(**_client_kwargs):
         client = MagicMock()

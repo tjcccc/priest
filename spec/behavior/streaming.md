@@ -1,8 +1,8 @@
 # Streaming
 
-This document defines the `stream()` contract and its differences from `run()`.
+This document defines the `stream()` contract, the `stream_events()` contract (spec 2.4.0), and their differences from `run()`.
 
-Reference implementation: `priest/engine.py` (`stream()` method), `priest/providers/base.py`
+Reference implementation: `priest/engine.py` (`stream()` method), `priest/providers/base.py`; `stream_events()` reference: TypeScript `@priest-ai/core` v2.4.0
 
 ---
 
@@ -18,7 +18,35 @@ Reference implementation: `priest/engine.py` (`stream()` method), `priest/provid
 | Session save | After provider call completes | After all chunks yielded |
 | Provider error | Captured into `response.error`; `ok = false` | Thrown as exception |
 
-**`stream()` yields only raw text chunks.** There is no final structured response. If callers need usage stats, latency, or session metadata, they must use `run()`.
+**`stream()` yields only raw text chunks.** There is no final structured response. If callers need usage stats, latency, session metadata, or tool calls while streaming, they must use `run()` or `stream_events()`.
+
+---
+
+## `stream_events()` (spec 2.4.0)
+
+`stream_events(request, options?)` yields typed events and terminates with a `done` event carrying the complete `PriestResponse` (text, tool_calls, usage, session info, and error state):
+
+| Event | Payload | Meaning |
+|---|---|---|
+| `text_delta` | `text` | Visible text chunk |
+| `tool_call_start` | `index`, `id?`, `name?` | The model began emitting a tool call |
+| `tool_call_delta` | `index`, `arguments_delta` | Raw argument JSON fragment |
+| `tool_call_end` | `index`, `tool_call` | Finalized `ToolCall` (arguments parsed; `{}` on parse failure) |
+| `usage` | `usage` | Token usage, possibly emitted more than once with refinements |
+| `done` | `response` | Terminal event; always last |
+
+Rules:
+
+- **Error semantics match `run()`, not `stream()`:** provider errors are captured into `done.response.error` (`ok = false`) rather than thrown. `PROVIDER_NOT_REGISTERED` and `SESSION_NOT_FOUND` still throw.
+- **Adapter fallback:** adapters MAY implement a native `stream_events`. When absent, the engine MUST wrap the adapter's plain `stream()` — each chunk becomes a `text_delta` and a final `finish` is synthesized. Engines therefore support `stream_events()` over every adapter.
+- **`stream()` as a filter:** implementations SHOULD express `stream()` as a filter over `stream_events()` that yields `text_delta` payloads and rethrows `done.response.error` as an exception, preserving the legacy contract.
+- **Session save:** identical to `run()`, including the tool-calls rule — nothing is saved while the response carries tool calls (see `tool-calling.md`).
+
+---
+
+## Cancellation (spec 2.4.0)
+
+`run()`, `stream()`, and `stream_events()` accept an optional cancellation signal (`AbortSignal` in TypeScript; an equivalent token elsewhere). Caller cancellation aborts in-flight provider work and surfaces as `REQUEST_ABORTED` — thrown by adapters, then handled per the method's error semantics. Timeouts remain `PROVIDER_TIMEOUT`; implementations MUST distinguish the two causes. The connect timeout MUST NOT terminate a healthy stream mid-read: once response headers arrive, only the caller signal remains armed.
 
 ---
 

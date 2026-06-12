@@ -121,7 +121,7 @@ async def test_prompt_format_injects_instruction():
     captured: list[dict] | None = None
     original_complete = MockAdapter.complete
 
-    async def capturing_complete(self, messages, config, output_spec):
+    async def capturing_complete(self, messages, config, output_spec, options=None):
         nonlocal captured
         captured = messages
         return await original_complete(self, messages, config, output_spec)
@@ -165,7 +165,7 @@ async def test_user_context_included_in_user_message():
     captured: list[dict] | None = None
     original_complete = MockAdapter.complete
 
-    async def capturing_complete(self, messages, config, output_spec):
+    async def capturing_complete(self, messages, config, output_spec, options=None):
         nonlocal captured
         captured = messages
         return await original_complete(self, messages, config, output_spec)
@@ -187,7 +187,7 @@ async def test_context_appears_first_in_system_message():
     captured: list[dict] | None = None
     original_complete = MockAdapter.complete
 
-    async def capturing_complete(self, messages, config, output_spec):
+    async def capturing_complete(self, messages, config, output_spec, options=None):
         nonlocal captured
         captured = messages
         return await original_complete(self, messages, config, output_spec)
@@ -211,7 +211,7 @@ async def test_memory_field_injected_as_dynamic_section():
     captured: list[dict] | None = None
     original_complete = MockAdapter.complete
 
-    async def capturing_complete(self, messages, config, output_spec):
+    async def capturing_complete(self, messages, config, output_spec, options=None):
         nonlocal captured
         captured = messages
         return await original_complete(self, messages, config, output_spec)
@@ -235,7 +235,7 @@ async def test_max_system_chars_trims_memory():
     captured: list[dict] | None = None
     original_complete = MockAdapter.complete
 
-    async def capturing_complete(self, messages, config, output_spec):
+    async def capturing_complete(self, messages, config, output_spec, options=None):
         nonlocal captured
         captured = messages
         return await original_complete(self, messages, config, output_spec)

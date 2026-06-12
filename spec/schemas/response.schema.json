@@ -14,6 +14,14 @@
       ],
       "description": "Raw text returned by the provider. Always the unmodified string — parsing is the caller's responsibility. Null on error."
     },
+    "tool_calls": {
+      "oneOf": [
+        { "type": "array", "items": { "$ref": "request.schema.json#/$defs/ToolCall" }, "minItems": 1 },
+        { "type": "null" }
+      ],
+      "default": null,
+      "description": "Tool calls requested by the model. Non-null exactly when execution.finished_reason is 'tool_calls'. The caller executes them and re-runs with the results appended to request.tool_exchange. See behavior/tool-calling.md."
+    },
     "execution": {
       "$ref": "#/$defs/ExecutionInfo"
     },
@@ -66,10 +74,10 @@
         "profile": { "type": "string", "description": "Profile name from the request." },
         "finished_reason": {
           "oneOf": [
-            { "type": "string", "enum": ["stop", "length", "error", "unknown"] },
+            { "type": "string", "enum": ["stop", "length", "tool_calls", "error", "unknown"] },
             { "type": "null" }
           ],
-          "description": "Normalized finish reason. 'error' when the run failed. Null if the provider did not report one."
+          "description": "Normalized finish reason. 'tool_calls' when the model requested tool execution. 'error' when the run failed. Null if the provider did not report one."
         }
       }
     },

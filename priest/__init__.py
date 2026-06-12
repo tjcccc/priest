@@ -1,4 +1,4 @@
-from priest.engine import PriestEngine
+from priest.engine import PriestEngine, PriestStreamEvent
 from priest.errors import (
     ErrorCode,
     PriestError,
@@ -9,8 +9,27 @@ from priest.errors import (
     ProviderTimeoutError,
     SessionNotFoundError,
 )
-from priest.providers.base import AdapterResult, ProviderAdapter
-from priest.schema.request import ImageInput, OutputSpec, PriestConfig, PriestRequest, SessionRef
+from priest.providers.base import AdapterCallOptions, AdapterResult, AdapterStreamEvent, ProviderAdapter
+from priest.schema.request import (
+    AssistantToolTurn,
+    ImageInput,
+    NamedToolChoice,
+    OutputSpec,
+    PriestConfig,
+    PriestRequest,
+    SessionRef,
+    ToolCall,
+    ToolChoice,
+    ToolDefinition,
+    ToolExchangeTurn,
+    ToolResultTurn,
+)
+from priest.tool_loop import (
+    ApprovalDecision,
+    ToolExecutionResult,
+    ToolLoopResult,
+    run_with_tools,
+)
 from priest.schema.response import ExecutionInfo, PriestResponse, SessionInfo, UsageInfo
 
 __all__ = [
@@ -36,7 +55,23 @@ __all__ = [
     "ProviderError",
     "ProviderTimeoutError",
     "ProviderRateLimitedError",
+    # Tool calling (spec 2.4.0)
+    "ToolDefinition",
+    "ToolChoice",
+    "NamedToolChoice",
+    "ToolCall",
+    "ToolExchangeTurn",
+    "AssistantToolTurn",
+    "ToolResultTurn",
+    "run_with_tools",
+    "ToolExecutionResult",
+    "ApprovalDecision",
+    "ToolLoopResult",
+    # Streaming (spec 2.4.0)
+    "PriestStreamEvent",
     # Adapter base types (for custom provider implementations)
     "ProviderAdapter",
     "AdapterResult",
+    "AdapterCallOptions",
+    "AdapterStreamEvent",
 ]

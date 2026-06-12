@@ -19,6 +19,8 @@ Reference implementation: `priest/errors.py`
 | `PROVIDER_ERROR` | `ProviderError` | HTTP error or network failure | `provider` (string) |
 | `PROVIDER_RATE_LIMITED` | `ProviderRateLimitedError` | HTTP 429 from provider | `provider` (string), `retry_after` (string of float, optional) |
 | `REQUEST_INVALID` | — | Malformed request fields | varies |
+| `REQUEST_ABORTED` | — | Caller cancelled an in-flight request via the cancellation signal (spec 2.4.0) | `provider` (string) |
+| `IMAGE_LOAD_ERROR` | `ImageLoadError` | `ImageInput.path` could not be read | `path` (string) |
 | `INTERNAL_ERROR` | — | Unexpected failure | varies |
 
 ---

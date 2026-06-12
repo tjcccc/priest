@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import threading
 from functools import partial
 from typing import AsyncGenerator
@@ -9,8 +10,8 @@ import anyio
 from openai import OpenAI, APIConnectionError, APIStatusError, APITimeoutError
 
 from priest.errors import ProviderError, ProviderTimeoutError
-from priest.providers.base import AdapterResult, ProviderAdapter
-from priest.schema.request import OutputSpec, PriestConfig
+from priest.providers.base import AdapterCallOptions, AdapterResult, AdapterStreamEvent, ProviderAdapter
+from priest.schema.request import NamedToolChoice, OutputSpec, PriestConfig, ToolCall
 
 
 class OpenAICompatProvider(ProviderAdapter):
@@ -38,11 +39,13 @@ class OpenAICompatProvider(ProviderAdapter):
         messages: list[dict],
         config: PriestConfig,
         output_spec: OutputSpec,
+        options: AdapterCallOptions | None = None,
     ) -> AdapterResult:
         kwargs: dict = {
             "model": config.model,
-            "messages": messages,
+            "messages": _translate_messages(messages),
         }
+        _apply_tools(kwargs, options)
 
         if config.max_output_tokens is not None:
             kwargs["max_tokens"] = config.max_output_tokens
@@ -80,8 +83,13 @@ class OpenAICompatProvider(ProviderAdapter):
             raise ProviderError(self._name, str(exc))
 
         choices = response.choices
-        text = choices[0].message.content if choices else None
-        finish_reason = _map_finish_reason(choices[0].finish_reason if choices else None)
+        message = choices[0].message if choices else None
+        text = message.content if message else None
+        tool_calls = _parse_tool_calls(message.tool_calls if message else None)
+        finish_reason = (
+            "tool_calls" if tool_calls
+            else _map_finish_reason(choices[0].finish_reason if choices else None)
+        )
 
         usage = response.usage
         return AdapterResult(
@@ -90,6 +98,7 @@ class OpenAICompatProvider(ProviderAdapter):
             finish_reason=finish_reason,
             input_tokens=usage.prompt_tokens if usage else None,
             output_tokens=usage.completion_tokens if usage else None,
+            tool_calls=tool_calls or None,
         )
 
     async def stream(
@@ -97,12 +106,25 @@ class OpenAICompatProvider(ProviderAdapter):
         messages: list[dict],
         config: PriestConfig,
         output_spec: OutputSpec,
+        options: AdapterCallOptions | None = None,
     ) -> AsyncGenerator[str, None]:
+        async for event in self.stream_events(messages, config, output_spec, options):
+            if event.type == "text_delta" and event.text:
+                yield event.text
+
+    async def stream_events(
+        self,
+        messages: list[dict],
+        config: PriestConfig,
+        output_spec: OutputSpec,
+        options: AdapterCallOptions | None = None,
+    ) -> AsyncGenerator[AdapterStreamEvent, None]:
         kwargs: dict = {
             "model": config.model,
-            "messages": messages,
+            "messages": _translate_messages(messages),
             "stream": True,
         }
+        _apply_tools(kwargs, options)
 
         if config.max_output_tokens is not None:
             kwargs["max_tokens"] = config.max_output_tokens
@@ -123,7 +145,10 @@ class OpenAICompatProvider(ProviderAdapter):
             kwargs["extra_body"] = config.provider_options
 
         loop = asyncio.get_running_loop()
-        q: asyncio.Queue[str | Exception | None] = asyncio.Queue()
+        q: asyncio.Queue[AdapterStreamEvent | Exception | None] = asyncio.Queue()
+
+        def _emit(event: AdapterStreamEvent) -> None:
+            loop.call_soon_threadsafe(q.put_nowait, event)
 
         def _run() -> None:
             try:
@@ -137,10 +162,68 @@ class OpenAICompatProvider(ProviderAdapter):
                     http_client=http_client,
                 )
                 response = client.chat.completions.create(**kwargs)
+                # Tool-call fragments accumulate per index until the stream ends.
+                partials: dict[int, dict] = {}
+                finish_reason: str | None = None
+                usage = None
                 for chunk in response:
+                    chunk_usage = getattr(chunk, "usage", None)
+                    if chunk_usage is not None:
+                        usage = chunk_usage
                     choices = chunk.choices
-                    if choices and choices[0].delta.content:
-                        loop.call_soon_threadsafe(q.put_nowait, choices[0].delta.content)
+                    if not choices:
+                        continue
+                    choice = choices[0]
+                    if choice.finish_reason:
+                        finish_reason = choice.finish_reason
+                    if choice.delta.content:
+                        _emit(AdapterStreamEvent(type="text_delta", text=choice.delta.content))
+                    for fragment in choice.delta.tool_calls or []:
+                        index = fragment.index or 0
+                        partial = partials.get(index)
+                        if partial is None:
+                            partial = {
+                                "id": fragment.id,
+                                "name": fragment.function.name if fragment.function else None,
+                                "args": "",
+                            }
+                            partials[index] = partial
+                            _emit(AdapterStreamEvent(
+                                type="tool_call_start", index=index,
+                                id=partial["id"], name=partial["name"],
+                            ))
+                        else:
+                            if fragment.id:
+                                partial["id"] = fragment.id
+                            if fragment.function and fragment.function.name:
+                                partial["name"] = fragment.function.name
+                        args_delta = fragment.function.arguments if fragment.function else None
+                        if args_delta:
+                            partial["args"] += args_delta
+                            _emit(AdapterStreamEvent(
+                                type="tool_call_delta", index=index, arguments_delta=args_delta,
+                            ))
+                for index in sorted(partials):
+                    partial = partials[index]
+                    _emit(AdapterStreamEvent(
+                        type="tool_call_end",
+                        index=index,
+                        tool_call=ToolCall(
+                            id=partial["id"] or f"call_{index}",
+                            name=partial["name"] or "",
+                            arguments=_parse_arguments(partial["args"]),
+                        ),
+                    ))
+                if usage is not None:
+                    _emit(AdapterStreamEvent(
+                        type="usage",
+                        input_tokens=getattr(usage, "prompt_tokens", None),
+                        output_tokens=getattr(usage, "completion_tokens", None),
+                    ))
+                _emit(AdapterStreamEvent(
+                    type="finish",
+                    finish_reason="tool_calls" if partials else _map_finish_reason(finish_reason) or "stop",
+                ))
             except Exception as exc:
                 loop.call_soon_threadsafe(q.put_nowait, exc)
             finally:
@@ -189,3 +272,86 @@ def _map_finish_reason(reason: str | None) -> str | None:
     if reason is None:
         return None
     return {"stop": "stop", "length": "length", "content_filter": "content_filter"}.get(reason, "unknown")
+
+
+def _translate_messages(messages: list[dict]) -> list[dict]:
+    """Translate the neutral tool format to OpenAI wire format.
+
+    Assistant tool calls serialize arguments to JSON strings; tool turns
+    carry tool_call_id. Other messages pass through unchanged.
+    """
+    result = []
+    for msg in messages:
+        if msg.get("role") == "tool":
+            result.append({
+                "role": "tool",
+                "tool_call_id": msg.get("tool_call_id"),
+                "content": msg.get("content", ""),
+            })
+        elif msg.get("role") == "assistant" and msg.get("tool_calls"):
+            result.append({
+                "role": "assistant",
+                "content": msg.get("content") or None,
+                "tool_calls": [
+                    {
+                        "id": call["id"],
+                        "type": "function",
+                        "function": {
+                            "name": call["name"],
+                            "arguments": json.dumps(call.get("arguments", {})),
+                        },
+                    }
+                    for call in msg["tool_calls"]
+                ],
+            })
+        else:
+            result.append(msg)
+    return result
+
+
+def _apply_tools(kwargs: dict, options: AdapterCallOptions | None) -> None:
+    if options is None or not options.tools:
+        return
+    kwargs["tools"] = [
+        {
+            "type": "function",
+            "function": {
+                "name": tool.name,
+                "description": tool.description,
+                "parameters": tool.parameters or {},
+            },
+        }
+        for tool in options.tools
+    ]
+    if options.tool_choice is not None:
+        if isinstance(options.tool_choice, NamedToolChoice):
+            kwargs["tool_choice"] = {"type": "function", "function": {"name": options.tool_choice.name}}
+        else:
+            kwargs["tool_choice"] = options.tool_choice
+
+
+def _parse_tool_calls(raw: list | None) -> list[ToolCall]:
+    """Parse non-streaming wire tool calls. Unparseable argument JSON becomes {}."""
+    calls: list[ToolCall] = []
+    for i, item in enumerate(raw or []):
+        function = getattr(item, "function", None)
+        name = getattr(function, "name", None) if function else None
+        if not name:
+            continue
+        calls.append(ToolCall(
+            id=getattr(item, "id", None) or f"call_{i}",
+            name=name,
+            arguments=_parse_arguments(getattr(function, "arguments", "") or ""),
+        ))
+    return calls
+
+
+def _parse_arguments(raw: str) -> dict:
+    """Per spec, unparseable or non-object argument JSON becomes {}."""
+    if not raw.strip():
+        return {}
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError:
+        return {}
+    return parsed if isinstance(parsed, dict) else {}

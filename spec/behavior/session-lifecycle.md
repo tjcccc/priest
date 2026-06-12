@@ -55,6 +55,8 @@ response.session = SessionInfo(
 
 If the provider returns an error (`response.error` is set), **the session is not saved** and `response.session` is null.
 
+**Tool-calls rule (spec 2.4.0):** when the response carries tool calls (`finished_reason == "tool_calls"`), **nothing is appended or saved** — the turn is still in progress. `response.session` is still populated so the caller can observe session identity. Tool exchange turns themselves are never persisted: the `turns` table only ever stores `user` and `assistant` roles, and only the original `request.prompt` plus the final assistant text of a tool loop are written. See `tool-calling.md`. (Images on the user turn are likewise not persisted — only the text prompt is stored.)
+
 ---
 
 ## Post-stream session save (`stream()`)

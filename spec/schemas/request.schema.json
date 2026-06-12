@@ -60,6 +60,27 @@
       "type": "object",
       "default": {},
       "description": "Arbitrary caller metadata. Passed through unchanged to PriestResponse.metadata."
+    },
+    "tools": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/ToolDefinition" },
+      "default": [],
+      "description": "Tools the model may call. The library transports tool definitions and calls; it never executes tools — execution is the caller's responsibility. See behavior/tool-calling.md."
+    },
+    "tool_choice": {
+      "oneOf": [
+        { "type": "string", "enum": ["auto", "none", "required"] },
+        { "type": "object", "required": ["name"], "additionalProperties": false, "properties": { "name": { "type": "string" } } },
+        { "type": "null" }
+      ],
+      "default": null,
+      "description": "Tool selection behavior. 'auto' lets the model decide, 'none' disables calls, 'required' forces a call, and {name} forces a specific tool. Only meaningful when tools is non-empty. Providers without an equivalent parameter ignore it."
+    },
+    "tool_exchange": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/ToolExchangeTurn" },
+      "default": [],
+      "description": "Tool loop history for the CURRENT user turn, appended after the user message. The caller replays the full exchange on each loop iteration. Never persisted in sessions. See behavior/tool-calling.md."
     }
   },
   "$defs": {
@@ -109,6 +130,58 @@
           "description": "Injects a natural-language format instruction into the system prompt. Works with any provider. See behavior/context-assembly.md for the exact instruction strings."
         }
       }
+    },
+    "ToolDefinition": {
+      "title": "ToolDefinition",
+      "description": "A tool the model may call.",
+      "type": "object",
+      "required": ["name"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string", "description": "Tool name as exposed to the model." },
+        "description": { "type": ["string", "null"], "default": null, "description": "What the tool does. Sent to the provider as an empty string when null." },
+        "parameters": { "type": ["object", "null"], "default": null, "description": "JSON Schema object describing the tool's parameters. Sent as an empty schema when null." }
+      }
+    },
+    "ToolCall": {
+      "title": "ToolCall",
+      "description": "A single tool call requested by the model.",
+      "type": "object",
+      "required": ["id", "name", "arguments"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "description": "Provider-assigned call id. Providers that do not assign ids (Ollama) get synthesized ids 'call_0', 'call_1', ... in response order." },
+        "name": { "type": "string" },
+        "arguments": { "type": "object", "description": "Parsed arguments. Implementations MUST return {} when the provider produced unparseable argument JSON, never raise." }
+      }
+    },
+    "ToolExchangeTurn": {
+      "title": "ToolExchangeTurn",
+      "description": "One entry in the turn-local tool loop history. Discriminated by 'kind'.",
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["kind", "tool_calls"],
+          "additionalProperties": false,
+          "properties": {
+            "kind": { "const": "assistant" },
+            "text": { "type": ["string", "null"], "default": null, "description": "Assistant text accompanying the tool calls, if any." },
+            "tool_calls": { "type": "array", "items": { "$ref": "#/$defs/ToolCall" }, "minItems": 1 }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["kind", "tool_call_id", "name", "content"],
+          "additionalProperties": false,
+          "properties": {
+            "kind": { "const": "tool_result" },
+            "tool_call_id": { "type": "string", "description": "Id of the ToolCall this result answers." },
+            "name": { "type": "string", "description": "Tool name, echoed for providers that need it (Ollama tool_name)." },
+            "content": { "type": "string", "description": "Tool output as text." },
+            "is_error": { "type": ["boolean", "null"], "default": null, "description": "True when the tool failed or the call was denied." }
+          }
+        }
+      ]
     },
     "ImageInput": {
       "title": "ImageInput",

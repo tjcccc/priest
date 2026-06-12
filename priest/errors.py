@@ -18,6 +18,7 @@ class ErrorCode(StrEnum):
 
     # Request errors
     REQUEST_INVALID = "REQUEST_INVALID"
+    REQUEST_ABORTED = "REQUEST_ABORTED"
     IMAGE_LOAD_ERROR = "IMAGE_LOAD_ERROR"
 
     # Generic
