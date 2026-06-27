@@ -6,6 +6,19 @@
 
 ---
 
+## 2026-06-27 — v2.6.1 — full spec sync (compaction, turn window, cached tokens, streaming usage)
+
+Brings priest-core to full parity with priest-typescript v2.6.1 (spec 2.5.0 → 2.6.0 → 2.6.1). All additions are off/opt-in by default and the SQLite schema is unchanged, so pre-2.5 sessions remain interoperable. Authored the spec/behavior docs for these versions (this SDK was implemented against the priest-typescript reference, which led these versions).
+
+- **Cached input tokens (spec 2.5.0):** `AdapterResult.cached_input_tokens` / `UsageInfo.cached_input_tokens` and the `usage` stream event now carry the prompt-cache hit count. Parsed from OpenAI-compat `usage.prompt_tokens_details.cached_tokens` and Anthropic `usage.cache_read_input_tokens` (complete + stream). None when the provider omits it.
+- **Conversation compaction (spec 2.5.0):** new `priest/compactor.py` (`should_compact`, `plan_compaction`, `build_summary_messages`, trigger ratio 0.8, default keep 6, summary cap 1024). `PriestConfig.max_context_tokens` enables it; a chat turn crossing 80% of the budget folds older turns into a running summary (provider summarization call) and replays only `summary + recent tail`. Non-destructive — raw turns stay in the store. State persists in session `metadata["__compaction"]` with **camelCase keys** (`summary`/`summarizedThrough`/`lastInputTokens`/`updatedAt`) — a cross-SDK contract (`session/model.py`). `engine.compact_session()` for a manual `/compact`. The trigger is measured on clean chat turns only (tool-exchange replays skipped).
+- **Session turn window (spec 2.6.0):** `PriestConfig.session_context_turns` caps how many recent turns are replayed; the context builder windows from `max(summarized_through, len-N)` and snaps an odd window down to a user turn.
+- **OpenAI-compat streaming usage (spec 2.6.1):** streaming requests send `stream_options: {include_usage: true}` (via `extra_body`, overridable by `provider_options`) so gateways emit a final usage chunk for models that don't volunteer it. Non-streaming `complete()` unchanged.
+- Spec: authored `spec/behavior/{session-lifecycle,context-assembly,providers,streaming}.md` for 2.5.0/2.6.0 and the 2.6.1 streaming clarification; spec CHANGELOG 2.5.0/2.6.0/2.6.1.
+- Tests: +25 (`tests/test_compaction.py` 20 — incl. a SQLite round-trip asserting the persisted `__compaction` camelCase bytes for cross-SDK interop; `tests/test_cached_usage.py` 5; plus the 3 streaming-usage wire tests in `tests/test_structured_output.py`). 110 unit tests pass.
+
+---
+
 ## 2026-06-12 — v2.4.0 — tool calling, structured streaming (spec 2.4.0 sync)
 
 Syncs the spec 2.4.0 features first implemented in priest-typescript.

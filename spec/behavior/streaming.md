@@ -32,7 +32,7 @@ Reference implementation: `priest/engine.py` (`stream()` method), `priest/provid
 | `tool_call_start` | `index`, `id?`, `name?` | The model began emitting a tool call |
 | `tool_call_delta` | `index`, `arguments_delta` | Raw argument JSON fragment |
 | `tool_call_end` | `index`, `tool_call` | Finalized `ToolCall` (arguments parsed; `{}` on parse failure) |
-| `usage` | `usage` | Token usage, possibly emitted more than once with refinements |
+| `usage` | `usage` | Token usage (`input_tokens`, `output_tokens`, and — spec 2.5.0 — `cached_input_tokens` when the provider reports prompt-cache hits); possibly emitted more than once with refinements |
 | `done` | `response` | Terminal event; always last |
 
 Rules:

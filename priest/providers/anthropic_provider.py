@@ -90,6 +90,7 @@ class AnthropicProvider(ProviderAdapter):
             finish_reason="tool_calls" if tool_calls else _map_finish_reason(data.get("stop_reason")),
             input_tokens=usage.get("input_tokens"),
             output_tokens=usage.get("output_tokens"),
+            cached_input_tokens=usage.get("cache_read_input_tokens"),
             tool_calls=tool_calls or None,
         )
 
@@ -152,6 +153,7 @@ class AnthropicProvider(ProviderAdapter):
                 stop_reason: str | None = None
                 input_tokens: int | None = None
                 output_tokens: int | None = None
+                cached_input_tokens: int | None = None
                 with httpx.Client(proxy=self._proxy) as client:
                     with client.stream(
                         "POST",
@@ -175,6 +177,7 @@ class AnthropicProvider(ProviderAdapter):
                             if event_type == "message_start":
                                 usage = data.get("message", {}).get("usage", {})
                                 input_tokens = usage.get("input_tokens", input_tokens)
+                                cached_input_tokens = usage.get("cache_read_input_tokens", cached_input_tokens)
                             elif event_type == "content_block_start":
                                 block = data.get("content_block", {})
                                 index = data.get("index")
@@ -224,6 +227,7 @@ class AnthropicProvider(ProviderAdapter):
                 if input_tokens is not None or output_tokens is not None:
                     _emit(AdapterStreamEvent(
                         type="usage", input_tokens=input_tokens, output_tokens=output_tokens,
+                        cached_input_tokens=cached_input_tokens,
                     ))
                 _emit(AdapterStreamEvent(
                     type="finish",

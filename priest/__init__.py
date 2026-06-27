@@ -31,6 +31,16 @@ from priest.tool_loop import (
     run_with_tools,
 )
 from priest.schema.response import ExecutionInfo, PriestResponse, SessionInfo, UsageInfo
+from priest.compactor import (
+    COMPACTION_TRIGGER_RATIO,
+    DEFAULT_COMPACTION_KEEP_TURNS,
+    SUMMARY_MAX_OUTPUT_TOKENS,
+    CompactionPlan,
+    build_summary_messages,
+    plan_compaction,
+    should_compact,
+)
+from priest.session.model import COMPACTION_METADATA_KEY, CompactionState
 
 __all__ = [
     # Core engine
@@ -69,6 +79,16 @@ __all__ = [
     "ToolLoopResult",
     # Streaming (spec 2.4.0)
     "PriestStreamEvent",
+    # Conversation compaction (spec 2.5.0)
+    "CompactionState",
+    "CompactionPlan",
+    "COMPACTION_METADATA_KEY",
+    "COMPACTION_TRIGGER_RATIO",
+    "DEFAULT_COMPACTION_KEEP_TURNS",
+    "SUMMARY_MAX_OUTPUT_TOKENS",
+    "should_compact",
+    "plan_compaction",
+    "build_summary_messages",
     # Adapter base types (for custom provider implementations)
     "ProviderAdapter",
     "AdapterResult",

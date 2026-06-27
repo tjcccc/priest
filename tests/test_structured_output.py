@@ -111,6 +111,79 @@ async def test_openai_provider_format_json_without_schema():
 
 
 # ---------------------------------------------------------------------------
+# OpenAI-compat streaming usage opt-in (stream_options.include_usage)
+# ---------------------------------------------------------------------------
+
+def _fake_streaming_client(captured: dict):
+    """Stand-in for OpenAI() that records create() kwargs and yields no chunks."""
+    client = MagicMock()
+
+    def _create(**kwargs):
+        captured.update(kwargs)
+        return iter(())  # no chunks → stream ends cleanly, finish is emitted
+
+    client.chat.completions.create.side_effect = _create
+    return client
+
+
+@pytest.mark.asyncio
+async def test_openai_streaming_requests_usage():
+    """Streaming requests ask for usage via extra_body.stream_options.include_usage."""
+    adapter = OpenAICompatProvider("openai", "https://api.openai.com/v1", "sk-test")
+    captured: dict = {}
+
+    with patch(
+        "priest.providers.openai_compat_provider.OpenAI",
+        side_effect=lambda **_: _fake_streaming_client(captured),
+    ):
+        async for _ in adapter.stream_events(_MESSAGES, _CONFIG, OutputSpec()):
+            pass
+
+    assert captured["stream"] is True
+    assert captured["extra_body"]["stream_options"] == {"include_usage": True}
+
+
+@pytest.mark.asyncio
+async def test_openai_complete_omits_stream_options():
+    """Non-streaming complete() is unchanged: no stream, no stream_options."""
+    adapter = OpenAICompatProvider("openai", "https://api.openai.com/v1", "sk-test")
+    captured: dict = {}
+
+    def _fake_call(*, api_key, base_url, timeout, proxy, kwargs):
+        captured.update(kwargs)
+        return _make_openai_response()
+
+    with patch("priest.providers.openai_compat_provider._call_sync", side_effect=_fake_call):
+        with patch("anyio.to_thread.run_sync", new=AsyncMock(side_effect=lambda fn: fn())):
+            await adapter.complete(_MESSAGES, _CONFIG, OutputSpec())
+
+    assert captured.get("stream") is None
+    assert "stream_options" not in captured
+    assert "stream_options" not in captured.get("extra_body", {})
+
+
+@pytest.mark.asyncio
+async def test_openai_streaming_usage_override_via_provider_options():
+    """provider_options can override (or drop) the include_usage default."""
+    adapter = OpenAICompatProvider("openai", "https://api.openai.com/v1", "sk-test")
+    config = PriestConfig(
+        provider="test",
+        model="test-model",
+        provider_options={"stream_options": {"include_usage": False}},
+    )
+    captured: dict = {}
+
+    with patch(
+        "priest.providers.openai_compat_provider.OpenAI",
+        side_effect=lambda **_: _fake_streaming_client(captured),
+    ):
+        async for _ in adapter.stream_events(_MESSAGES, config, OutputSpec()):
+            pass
+
+    assert captured["extra_body"]["stream_options"] == {"include_usage": False}
+
+
+# ---------------------------------------------------------------------------
 # Ollama adapter
 # ---------------------------------------------------------------------------
 

@@ -11,6 +11,8 @@ class UsageInfo(BaseModel):
     input_tokens: int | None = None
     output_tokens: int | None = None
     total_tokens: int | None = None
+    # Prompt-cache hit count (spec 2.5.0). None when the provider omits it.
+    cached_input_tokens: int | None = None
     estimated_cost_usd: float | None = None
 
 

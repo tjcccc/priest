@@ -43,6 +43,17 @@ class PriestConfig(BaseModel):
     # `context`, rules, identity, custom, and format instructions are never trimmed.
     # None = no trimming (default). Callers opt in when they need safety.
     max_system_chars: int | None = None
+    # Conversation compaction budget (spec 2.5.0). When set, a chat turn whose
+    # reported input usage crosses 80% of this budget triggers compaction: older
+    # turns are folded into a running summary and only `summary + recent tail` is
+    # replayed. None = compaction off (default). Independent of max_system_chars.
+    max_context_tokens: int | None = None
+    # Most-recent turns kept verbatim when compacting (spec 2.5.0). Default 6.
+    compaction_keep_turns: int | None = None
+    # Hard cap on how many recent session turns are replayed into a request
+    # (spec 2.6.0). When set, only the last N turns (after any compaction summary)
+    # reach the model. 0 replays none (summary only); None replays all (default).
+    session_context_turns: int | None = None
     # Provider-specific options merged directly into the request payload.
     # Examples: {"think": False} for Ollama/Qwen3, {"temperature": 0.7} etc.
     provider_options: dict[str, Any] = Field(default_factory=dict)

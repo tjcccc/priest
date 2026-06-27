@@ -11,10 +11,18 @@ from priest.errors import (
     ProviderNotRegisteredError,
     SessionNotFoundError,
 )
+from priest.compactor import (
+    DEFAULT_COMPACTION_KEEP_TURNS,
+    SUMMARY_MAX_OUTPUT_TOKENS,
+    build_summary_messages,
+    plan_compaction,
+    should_compact,
+)
 from priest.profile.context_builder import build_messages
 from priest.profile.loader import ProfileLoader
 from priest.providers.base import AdapterCallOptions, ProviderAdapter
-from priest.schema.request import PriestRequest, ToolCall
+from priest.schema.request import OutputSpec, PriestConfig, PriestRequest, ToolCall
+from priest.session.model import Session
 from priest.schema.response import (
     ExecutionInfo,
     PriestError as PriestErrorModel,
@@ -107,6 +115,9 @@ class PriestEngine:
                 )
                 is_new_session = True
 
+        # --- Compaction (spec 2.5.0): fold older turns before building messages ---
+        await self._maybe_compact(session, request.config)
+
         # --- Build message list ---
         messages = build_messages(
             profile=profile,
@@ -119,6 +130,7 @@ class PriestEngine:
             images=request.images or None,
             max_system_chars=request.config.max_system_chars,
             tool_exchange=request.tool_exchange or None,
+            session_context_turns=request.config.session_context_turns,
         )
 
         # --- Call provider ---
@@ -128,6 +140,7 @@ class PriestEngine:
         finish_reason: str | None = None
         input_tokens: int | None = None
         output_tokens: int | None = None
+        cached_input_tokens: int | None = None
 
         try:
             result = await adapter.complete(
@@ -141,6 +154,7 @@ class PriestEngine:
             finish_reason = result.finish_reason
             input_tokens = result.input_tokens
             output_tokens = result.output_tokens
+            cached_input_tokens = result.cached_input_tokens
             if tool_calls and finish_reason != "tool_calls":
                 finish_reason = "tool_calls"
 
@@ -161,6 +175,7 @@ class PriestEngine:
                 session.append_turn("user", request.prompt)
                 if text is not None:
                     session.append_turn("assistant", text)
+                self._record_chat_usage(session, request, input_tokens)
                 await self._session_store.save(session)
             session_info = SessionInfo(
                 id=session.id,
@@ -170,14 +185,7 @@ class PriestEngine:
 
         latency_ms = int(time.monotonic() * 1000) - start_ms
 
-        usage: UsageInfo | None = None
-        if input_tokens is not None or output_tokens is not None:
-            total = (input_tokens or 0) + (output_tokens or 0)
-            usage = UsageInfo(
-                input_tokens=input_tokens,
-                output_tokens=output_tokens,
-                total_tokens=total if total > 0 else None,
-            )
+        usage = _build_usage(input_tokens, output_tokens, cached_input_tokens)
 
         return PriestResponse(
             text=text,
@@ -256,6 +264,8 @@ class PriestEngine:
                 session = await self._session_store.create(profile_name=request.profile)
                 is_new_session = True
 
+        await self._maybe_compact(session, request.config)
+
         messages = build_messages(
             profile=profile,
             session=session,
@@ -267,6 +277,7 @@ class PriestEngine:
             images=request.images or None,
             max_system_chars=request.config.max_system_chars,
             tool_exchange=request.tool_exchange or None,
+            session_context_turns=request.config.session_context_turns,
         )
 
         text_parts: list[str] = []
@@ -274,6 +285,7 @@ class PriestEngine:
         finish_reason: str | None = None
         input_tokens: int | None = None
         output_tokens: int | None = None
+        cached_input_tokens: int | None = None
         error_model: PriestErrorModel | None = None
 
         try:
@@ -299,7 +311,8 @@ class PriestEngine:
                 elif event.type == "usage":
                     input_tokens = event.input_tokens if event.input_tokens is not None else input_tokens
                     output_tokens = event.output_tokens if event.output_tokens is not None else output_tokens
-                    yield PriestStreamEvent(type="usage", usage=_build_usage(input_tokens, output_tokens))
+                    cached_input_tokens = event.cached_input_tokens if event.cached_input_tokens is not None else cached_input_tokens
+                    yield PriestStreamEvent(type="usage", usage=_build_usage(input_tokens, output_tokens, cached_input_tokens))
                 elif event.type == "finish":
                     finish_reason = event.finish_reason or finish_reason
         except PriestError as exc:
@@ -320,6 +333,7 @@ class PriestEngine:
             if not tool_calls and text is not None:
                 session.append_turn("user", request.prompt)
                 session.append_turn("assistant", text)
+                self._record_chat_usage(session, request, input_tokens)
                 await self._session_store.save(session)
             session_info = SessionInfo(
                 id=session.id,
@@ -337,15 +351,89 @@ class PriestEngine:
                 profile=request.profile,
                 finished_reason=finish_reason,  # type: ignore[arg-type]
             ),
-            usage=_build_usage(input_tokens, output_tokens),
+            usage=_build_usage(input_tokens, output_tokens, cached_input_tokens),
             session=session_info,
             error=error_model,
             metadata=request.metadata,
         )
         yield PriestStreamEvent(type="done", response=response)
 
+    # ---- Conversation compaction (spec 2.5.0) ----
 
-def _build_usage(input_tokens: int | None, output_tokens: int | None) -> UsageInfo | None:
+    async def compact_session(
+        self,
+        session_id: str,
+        config: PriestConfig,
+        options: AdapterCallOptions | None = None,
+    ) -> dict:
+        """Compact a session on demand: fold older turns into the running summary,
+        keeping the most recent ``compaction_keep_turns``. Used by hosts for a
+        manual ``/compact``. Returns ``{"compacted": bool, "summarized_through": int}``.
+        Raises SESSION_NOT_FOUND when the id is unknown.
+        """
+        if self._session_store is None:
+            return {"compacted": False}
+        session = await self._session_store.get(session_id)
+        if session is None:
+            raise SessionNotFoundError(session_id)
+        compacted = await self._compact(session, config)
+        return {
+            "compacted": compacted,
+            "summarized_through": session.get_compaction().summarized_through,
+        }
+
+    def _record_chat_usage(self, session: Session, request: PriestRequest, input_tokens: int | None) -> None:
+        """Record a turn's input size as the compaction trigger signal.
+
+        Skipped only when the turn *replays a tool exchange* — then the input is
+        inflated by turn-local tool context (web results, agent iterations) rather
+        than the clean persisted session. Merely *offering* tools still records.
+        """
+        if request.tool_exchange:
+            return
+        session.record_input_tokens(input_tokens)
+
+    async def _maybe_compact(self, session: Session | None, config: PriestConfig) -> None:
+        """Compact before a turn when the previous turn's input usage crossed the budget."""
+        if session is None or self._session_store is None:
+            return
+        if not should_compact(session.get_compaction().last_input_tokens, config.max_context_tokens):
+            return
+        await self._compact(session, config)
+
+    async def _compact(self, session: Session, config: PriestConfig) -> bool:
+        """Fold turns into the summary via a provider summarization call; persists the result."""
+        if self._session_store is None:
+            return False
+        keep_turns = config.compaction_keep_turns if config.compaction_keep_turns is not None else DEFAULT_COMPACTION_KEEP_TURNS
+        existing = session.get_compaction()
+        plan = plan_compaction(session.turns, existing.summarized_through or 0, keep_turns)
+        if plan is None:
+            return False
+
+        adapter = self._adapters.get(config.provider)
+        if adapter is None:
+            raise ProviderNotRegisteredError(config.provider)
+
+        messages = build_summary_messages(existing.summary, plan.to_summarize)
+        summary_config = config.model_copy(update={
+            "max_output_tokens": config.max_output_tokens if config.max_output_tokens is not None else SUMMARY_MAX_OUTPUT_TOKENS,
+        })
+        result = await adapter.complete(messages, summary_config, OutputSpec())
+        summary = (result.text or "").strip()
+        if not summary:
+            return False
+
+        session.apply_compaction(summary, plan.summarized_through)
+        await self._session_store.save(session)
+        return True
+
+
+def _build_usage(
+    input_tokens: int | None,
+    output_tokens: int | None,
+    cached_input_tokens: int | None = None,
+) -> UsageInfo | None:
     if input_tokens is None and output_tokens is None:
         return None
     total = (input_tokens or 0) + (output_tokens or 0)
@@ -353,4 +441,5 @@ def _build_usage(input_tokens: int | None, output_tokens: int | None) -> UsageIn
         input_tokens=input_tokens,
         output_tokens=output_tokens,
         total_tokens=total if total > 0 else None,
+        cached_input_tokens=cached_input_tokens,
     )

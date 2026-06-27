@@ -29,6 +29,7 @@ def build_messages(
     images: list[ImageInput] | None = None,
     max_system_chars: int | None = None,
     tool_exchange: list[ToolExchangeTurn] | None = None,
+    session_context_turns: int | None = None,
 ) -> list[dict]:
     """Assemble the ordered message list for a provider.
 
@@ -63,6 +64,12 @@ def build_messages(
     profile_memories = _normalize_memories(profile.memories)
     dynamic_memory = _dedupe_memories(memory, existing=profile_memories)
 
+    # Compaction summary (spec 2.5.0): when the session has been compacted, the
+    # summary stands in for the folded-away leading turns, which are skipped below.
+    compaction = session.get_compaction() if session is not None else None
+    conversation_summary = compaction.summary if compaction else None
+    summarized_through = compaction.summarized_through if compaction else 0
+
     if max_system_chars is not None and max_system_chars > 0:
         dynamic_memory, profile_memories = _trim_to_budget(
             context=context,
@@ -71,6 +78,7 @@ def build_messages(
             dynamic_memory=dynamic_memory,
             output_spec=output_spec,
             budget=max_system_chars,
+            conversation_summary=conversation_summary,
         )
 
     system_content = _assemble_system(
@@ -79,6 +87,7 @@ def build_messages(
         profile_memories=profile_memories,
         dynamic_memory=dynamic_memory,
         output_spec=output_spec,
+        conversation_summary=conversation_summary,
     )
 
     messages: list[dict] = []
@@ -87,7 +96,22 @@ def build_messages(
         messages.append({"role": "system", "content": system_content})
 
     if session is not None:
-        for turn in session.turns:
+        # Replay window (spec 2.5.0 + 2.6.0). Skip turns folded into the summary;
+        # optionally cap to the last N turns (session_context_turns).
+        window_start = summarized_through
+        if session_context_turns is not None:
+            n = max(0, session_context_turns)
+            window_start = max(summarized_through, len(session.turns) - n)
+            # Snap down to a user turn so an odd-sized window never opens the replay
+            # on an orphan assistant reply (strict OpenAI-compatible backends reject
+            # a leading assistant message). Floored by summarized_through.
+            while (
+                window_start > summarized_through
+                and window_start < len(session.turns)
+                and session.turns[window_start].role != "user"
+            ):
+                window_start -= 1
+        for turn in session.turns[window_start:]:
             messages.append({"role": turn.role, "content": turn.content})
 
     user_text_parts = [prompt]
@@ -155,6 +179,7 @@ def _trim_to_budget(
     dynamic_memory: list[str],
     output_spec: OutputSpec,
     budget: int,
+    conversation_summary: str | None = None,
 ) -> tuple[list[str], list[str]]:
     """Trim dynamic_memory (tail first) then profile_memories (tail first) to fit budget.
 
@@ -167,6 +192,7 @@ def _trim_to_budget(
             profile_memories=prof,
             dynamic_memory=dyn,
             output_spec=output_spec,
+            conversation_summary=conversation_summary,
         ))
 
     if _size(dynamic_memory, profile_memories) <= budget:
@@ -200,6 +226,7 @@ def _assemble_system(
     profile_memories: list[str],
     dynamic_memory: list[str],
     output_spec: OutputSpec,
+    conversation_summary: str | None = None,
 ) -> str:
     """Join all system prompt parts into the final string."""
     parts: list[str] = []
@@ -222,6 +249,10 @@ def _assemble_system(
 
     if dynamic_memory:
         parts.append("## Memory\n\n" + "\n".join(dynamic_memory))
+
+    # Compaction summary (spec 2.5.0): after memory, before the format instruction.
+    if conversation_summary and conversation_summary.strip():
+        parts.append("## Conversation so far (summary)\n\n" + conversation_summary.strip())
 
     if output_spec.prompt_format:
         instruction = _FORMAT_INSTRUCTIONS.get(output_spec.prompt_format)

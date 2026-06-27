@@ -122,6 +122,7 @@ Covers: OpenAI, Gemini, Bailian (Alibaba), MiniMax, DeepSeek, Kimi, Groq, OpenRo
 | `choices[0].message.content` | `result.text` |
 | `usage.prompt_tokens` | `result.input_tokens` |
 | `usage.completion_tokens` | `result.output_tokens` |
+| `usage.prompt_tokens_details.cached_tokens` | `result.cached_input_tokens` (spec 2.5.0; null when omitted) |
 | `choices[0].finish_reason` | mapped via finish reason table below |
 
 **Finish reason mapping:**
@@ -133,7 +134,9 @@ Covers: OpenAI, Gemini, Bailian (Alibaba), MiniMax, DeepSeek, Kimi, Groq, OpenRo
 | `"content_filter"` | `"unknown"` |
 | anything else | `"unknown"` |
 
-**Streaming (SSE):** Set `"stream": true`. Parse Server-Sent Events: filter lines starting with `data: `, strip prefix, parse JSON. Yield `choices[0].delta.content` when non-empty. Stop on `data: [DONE]`.
+**Streaming (SSE):** Set `"stream": true` and `"stream_options": {"include_usage": true}`. Parse Server-Sent Events: filter lines starting with `data: `, strip prefix, parse JSON. Yield `choices[0].delta.content` when non-empty. Stop on `data: [DONE]`.
+
+`stream_options.include_usage` is **required on streaming requests** so the gateway emits a final usage chunk (`usage` with `prompt_tokens` / `completion_tokens`). Without it, OpenAI-compatible gateways (e.g. Alibaba DashScope/Bailian) report streaming usage only for models that volunteer it, so cost/context goes missing for the rest. Apply it to streaming requests **only** — the non-streaming `complete()` reads usage from its single JSON response and is unchanged. The flag is overridable via `config.provider_options` (a backend that rejects `stream_options` can set or drop it), so emit it as a default that `provider_options` / `extra_body` merges over.
 
 **Images:** multimodal user content blocks pass through unchanged — they are already OpenAI wire format.
 
@@ -210,6 +213,7 @@ payload.messages = turns
 | `content[0].text` (where `type == "text"`) | `result.text` |
 | `usage.input_tokens` | `result.input_tokens` |
 | `usage.output_tokens` | `result.output_tokens` |
+| `usage.cache_read_input_tokens` | `result.cached_input_tokens` (spec 2.5.0; null when omitted) |
 | `stop_reason` | mapped via finish reason table below |
 
 **Finish reason mapping:**
@@ -236,4 +240,4 @@ payload.messages = turns
 | response `content[].tool_use` blocks | `ToolCall` with the provider's `id`; `input` is a parsed object |
 | `stop_reason == "tool_use"` | `finished_reason: "tool_calls"` |
 
-Streaming tool calls: `content_block_start` with `content_block.type == "tool_use"` opens a call (provider block `index` maps to tool-call event index assigned in tool_use-block order); `content_block_delta` with `delta.type == "input_json_delta"` accumulates `partial_json`; `content_block_stop` finalizes the call. `message_delta` carries `stop_reason` and `usage.output_tokens`; `message_start` carries `usage.input_tokens`.
+Streaming tool calls: `content_block_start` with `content_block.type == "tool_use"` opens a call (provider block `index` maps to tool-call event index assigned in tool_use-block order); `content_block_delta` with `delta.type == "input_json_delta"` accumulates `partial_json`; `content_block_stop` finalizes the call. `message_delta` carries `stop_reason` and `usage.output_tokens`; `message_start` carries `usage.input_tokens` and (spec 2.5.0) `usage.cache_read_input_tokens` → the `usage` event's `cached_input_tokens`.

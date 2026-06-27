@@ -95,12 +95,22 @@ if dynamic_memory is non-empty:
     block = "## Memory\n\n" + join(dynamic_memory with "\n")
     append block to system_parts
 
+# Compaction summary (spec 2.5.0): when the session has been compacted, the
+# summary stands in for the folded-away leading turns (which Step 5 skips).
+# Placed after memory (more volatile than profile/rules) and before the format
+# instruction. compaction = session.metadata["__compaction"] (see session-lifecycle.md).
+if compaction.summary is non-empty:
+    block = "## Conversation so far (summary)\n\n" + compaction.summary (stripped)
+    append block to system_parts
+
 if request.output.prompt_format is set (not null):
     instruction = FORMAT_INSTRUCTIONS[request.output.prompt_format]
     append instruction to system_parts
 
 system_content = join(system_parts with "\n\n")
 ```
+
+> When `max_system_chars` is set, the summary participates in the Step-3 length check but is **never trimmed** (like `context`/rules/identity/custom/format) — only the two memory blocks are trimmed tail-first.
 
 ### Step 5 — Build message list
 
@@ -111,7 +121,25 @@ if system_content is non-empty:
     messages.append({ role: "system", content: system_content })
 
 if session is not null:
-    for each turn in session.turns (in order):
+    # Replay window (spec 2.5.0 + 2.6.0). Default: replay all turns from
+    # summarized_through onward (compaction folds turns[0 .. summarized_through)
+    # into the summary section above, so they are skipped here).
+    summarized_through = compaction.summarized_through or 0   # 0 when uncompacted
+    window_start = summarized_through
+
+    if request.config.session_context_turns is set (not null):   # spec 2.6.0
+        N = max(0, session_context_turns)
+        # Cap to the last N turns, but never un-hide already-summarized turns.
+        window_start = max(summarized_through, len(session.turns) - N)
+        # Snap down to a user turn so an odd-sized window never opens the replay
+        # on an orphan assistant reply (strict OpenAI-compatible backends reject a
+        # leading assistant message). Floored by summarized_through.
+        while window_start > summarized_through
+              and window_start < len(session.turns)
+              and session.turns[window_start].role != "user":
+            window_start -= 1
+
+    for each turn in session.turns[window_start:] (in order):
         messages.append({ role: turn.role, content: turn.content })
 
 user_parts = [request.prompt]

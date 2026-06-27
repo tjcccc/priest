@@ -98,6 +98,7 @@ class OpenAICompatProvider(ProviderAdapter):
             finish_reason=finish_reason,
             input_tokens=usage.prompt_tokens if usage else None,
             output_tokens=usage.completion_tokens if usage else None,
+            cached_input_tokens=_cached_tokens(usage),
             tool_calls=tool_calls or None,
         )
 
@@ -141,8 +142,14 @@ class OpenAICompatProvider(ProviderAdapter):
         elif output_spec.provider_format == "json":
             kwargs["response_format"] = {"type": "json_object"}
 
+        # Streaming usage is opt-in: without stream_options.include_usage,
+        # OpenAI-compatible gateways (e.g. DashScope) emit a usage chunk only for
+        # models that volunteer it, so cost/context goes missing for the rest. Sent
+        # via extra_body so config.provider_options can still override (or drop) it.
+        extra_body: dict = {"stream_options": {"include_usage": True}}
         if config.provider_options:
-            kwargs["extra_body"] = config.provider_options
+            extra_body = {**extra_body, **config.provider_options}
+        kwargs["extra_body"] = extra_body
 
         loop = asyncio.get_running_loop()
         q: asyncio.Queue[AdapterStreamEvent | Exception | None] = asyncio.Queue()
@@ -219,6 +226,7 @@ class OpenAICompatProvider(ProviderAdapter):
                         type="usage",
                         input_tokens=getattr(usage, "prompt_tokens", None),
                         output_tokens=getattr(usage, "completion_tokens", None),
+                        cached_input_tokens=_cached_tokens(usage),
                     ))
                 _emit(AdapterStreamEvent(
                     type="finish",
@@ -266,6 +274,19 @@ def _call_sync(*, api_key: str, base_url: str, timeout: float, proxy: str | None
         http_client=http_client,
     )
     return client.chat.completions.create(**kwargs)
+
+
+def _cached_tokens(usage: object | None) -> int | None:
+    """Prompt-cache hit count from usage.prompt_tokens_details.cached_tokens (spec 2.5.0).
+
+    None when usage or the nested detail is absent (most models/providers omit it).
+    """
+    if usage is None:
+        return None
+    details = getattr(usage, "prompt_tokens_details", None)
+    if details is None:
+        return None
+    return getattr(details, "cached_tokens", None)
 
 
 def _map_finish_reason(reason: str | None) -> str | None:

@@ -15,6 +15,8 @@ class AdapterResult:
     finish_reason: str | None
     input_tokens: int | None
     output_tokens: int | None
+    # Prompt-cache hit count (spec 2.5.0). None when the provider omits it.
+    cached_input_tokens: int | None = None
     # Tool calls requested by the model. None when there are none.
     tool_calls: list[ToolCall] | None = None
 
@@ -36,6 +38,7 @@ class AdapterStreamEvent:
     tool_call: ToolCall | None = None
     input_tokens: int | None = None
     output_tokens: int | None = None
+    cached_input_tokens: int | None = None
     finish_reason: str | None = None
 
 
